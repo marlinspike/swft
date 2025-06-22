@@ -141,6 +141,50 @@ graph TD
 
 ```
 
+## SWFT Pipeline Diagram
+
+```mermaid
+graph TD
+  start[Start: Triggered by push to main or manual dispatch]
+
+  start --> checkout[Checkout source code]
+  checkout --> azure_login[Login to Azure]
+  azure_login --> buildx[Setup Docker Buildx]
+  buildx --> acr_login[Login to Azure Container Registry]
+  acr_login --> docker_build[Build and push Docker image to ACR]
+  docker_build --> generate_sbom[Generate SBOM using Syft]
+  generate_sbom --> install_trivy[Install Trivy]
+  install_trivy --> trivy_scan[Run CVE scan and generate JSON report]
+
+  trivy_scan --> sbom_ready[SBOM + Trivy ready]
+
+  subgraph Azure Cloud
+    sbom_ready --> upload_sbom_azure[Upload SBOM to Azure Blob Storage]
+    sbom_ready --> upload_trivy_azure[Upload Trivy report to Azure Blob Storage]
+
+    upload_trivy_azure --> artifacts_check[Check for local artifacts]
+    artifacts_check --> upload_artifacts_azure[Upload artifacts to Azure Blob Storage]
+
+    upload_artifacts_azure --> deploy_check[Check if container exists in ACI]
+    deploy_check --> delete_container[Delete existing container if found]
+    delete_container --> wait_delete[Wait for container deletion]
+    wait_delete --> create_container[Create container instance with public IP]
+    deploy_check --> create_container
+    create_container --> get_ip[Fetch container public IP]
+  end
+
+  get_ip --> workflow_complete[Workflow complete]
+
+  %% Isolated DoD SWFT block
+  subgraph DoD SWFT
+    swft_upload[Stub: Upload SBOM + Trivy to DoD SWFT API]
+  end
+
+  upload_sbom_azure -.-> swft_upload
+  upload_trivy_azure -.-> swft_upload
+```
+
+
 ## SWFT App
 
 First we need to create the Azure resources
