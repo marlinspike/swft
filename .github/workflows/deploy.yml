@@ -1,0 +1,123 @@
+name: SWFT Container CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ACR_LOGIN_SERVER:    ${{ secrets.ACR_LOGIN_SERVER }}
+  ACR_USERNAME:        ${{ secrets.ACR_USERNAME }}
+  ACR_PASSWORD:        ${{ secrets.ACR_PASSWORD }}
+  IMAGE_NAME:          fastapi-demo
+  IMAGE_TAG:           ${{ github.sha }}
+  AZURE_RESOURCE_GROUP: demo-swft-cicd
+  AZURE_CONTAINER_NAME: swft-fastapi
+  AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_KEY:     ${{ secrets.AZURE_STORAGE_KEY }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ACR
+        run: |
+          echo "$ACR_PASSWORD" \
+            | docker login "$ACR_LOGIN_SERVER" \
+                          -u "$ACR_USERNAME" \
+                          --password-stdin
+
+      - name: Build Docker image
+        run: docker build \
+               -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" .
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0.20.1
+        with:
+          image:        ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format:       cyclonedx-json
+          output-file:  sbom.cyclonedx.json
+          upload-artifact: false
+
+      - name: CVE Scan (Trivy)
+        uses: aquasecurity/trivy-action@v0.19.0
+        with:
+          image-ref:    ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format:       table
+          exit-code:    1
+          ignore-unfixed: true
+
+      - name: Push Docker image to ACR
+        run: docker push "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+
+      - name: Upload SBOM to Azure Storage
+        run: |
+          az storage blob upload \
+            --auth-mode key \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --account-key  "$AZURE_STORAGE_KEY" \
+            --container-name sboms \
+            --file           sbom.cyclonedx.json \
+            --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json"
+
+      - name: Upload all artifacts to Azure Blob Storage
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            # Ensure container exists
+            az storage container create \
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --account-key  "$AZURE_STORAGE_KEY" \
+              --name         artifacts \
+              --fail-on-exist false
+
+            # Loop and upload with build-id prefix
+            for file in ./artifacts/*; do
+              filename=$(basename "$file")
+              az storage blob upload \
+                --account-name   "$AZURE_STORAGE_ACCOUNT" \
+                --account-key    "$AZURE_STORAGE_KEY" \
+                --container-name artifacts \
+                --file           "$file" \
+                --name           "${IMAGE_TAG}-${filename}"
+            done
+
+      - name: Deploy to Azure Container Instance
+        shell: bash
+        run: |
+          if az container show \
+               --resource-group "$AZURE_RESOURCE_GROUP" \
+               --name "$AZURE_CONTAINER_NAME" \
+               --output none; then
+            az container update \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+              --cpu 1 --memory 1
+          else
+            az container create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+              --registry-login-server "$ACR_LOGIN_SERVER" \
+              --registry-username     "$ACR_USERNAME" \
+              --registry-password     "$ACR_PASSWORD" \
+              --cpu 1 --memory 1 \
+              --ports 80
+          fi
