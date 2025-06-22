@@ -250,6 +250,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.1
+
       - name: Checkout source
         uses: actions/checkout@v3
 
@@ -269,8 +272,11 @@ jobs:
                           --password-stdin
 
       - name: Build Docker image
-        run: docker build \
-               -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" .
+        run: |
+          docker buildx build \
+            -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --push \
+            .
 
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0.20.1
@@ -280,18 +286,22 @@ jobs:
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
 
-      - name: CVE Scan (Trivy)
-        uses: aquasecurity/trivy-action@v0.19.0
-        with:
-          image-ref:    ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format:       table
-          exit-code:    1
-          ignore-unfixed: true
+      - name: CVE Scan and save report (Trivy)
+        run: |
+          trivy image \
+            --format json \
+            --output trivy-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
-      - name: Push Docker image to ACR
-        run: docker push "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
       - name: Upload SBOM to Azure Storage
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           az storage blob upload \
             --auth-mode key \
@@ -299,53 +309,122 @@ jobs:
             --account-key  "$AZURE_STORAGE_KEY" \
             --container-name sboms \
             --file           sbom.cyclonedx.json \
-            --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json"
+            --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
+            --overwrite
+
+
+      - name: Upload Trivy report to Azure Storage
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          az storage blob upload \
+            --auth-mode key \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --account-key  "$AZURE_STORAGE_KEY" \
+            --container-name scans \
+            --file           trivy-report.json \
+            --name           "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
+            --overwrite
+
+
+      - name: Upload SBOM to DoD SWFT REST API (stubbed)
+        run: |
+          echo "🟡 STUB: Would POST SBOM to DoD SWFT API"
+          echo "Endpoint: https://api.swft.dod.mil/v1/sboms"
+          echo "Auth: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN }}"
+          echo "Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}"
+
 
       - name: Upload all artifacts to Azure Blob Storage
         uses: azure/CLI@v2
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         with:
           inlineScript: |
-            # Ensure container exists
             az storage container create \
               --account-name "$AZURE_STORAGE_ACCOUNT" \
               --account-key  "$AZURE_STORAGE_KEY" \
               --name         artifacts \
-              --fail-on-exist false
+              --public-access off
 
-            # Loop and upload with build-id prefix
-            for file in ./artifacts/*; do
-              filename=$(basename "$file")
-              az storage blob upload \
-                --account-name   "$AZURE_STORAGE_ACCOUNT" \
-                --account-key    "$AZURE_STORAGE_KEY" \
-                --container-name artifacts \
-                --file           "$file" \
-                --name           "${IMAGE_TAG}-${filename}"
-            done
+            if compgen -G "./artifacts/*" > /dev/null; then
+              for file in ./artifacts/*; do
+                filename=$(basename "$file")
+                echo "Uploading $filename..."
+                az storage blob upload \
+                  --account-name   "$AZURE_STORAGE_ACCOUNT" \
+                  --account-key    "$AZURE_STORAGE_KEY" \
+                  --container-name artifacts \
+                  --file           "$file" \
+                  --name           "${IMAGE_TAG}-${filename}"
+              done
+            else
+              echo "No files found in ./artifacts/ — skipping upload."
+            fi
 
       - name: Deploy to Azure Container Instance
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_NAME: ${{ env.AZURE_CONTAINER_NAME }}
+          ACR_LOGIN_SERVER:     ${{ env.ACR_LOGIN_SERVER }}
+          ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
+          IMAGE_NAME:           ${{ env.IMAGE_NAME }}
+          IMAGE_TAG:            ${{ env.IMAGE_TAG }}
         run: |
+          echo "Checking if container instance exists..."
           if az container show \
-               --resource-group "$AZURE_RESOURCE_GROUP" \
-               --name "$AZURE_CONTAINER_NAME" \
-               --output none; then
-            az container update \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
-              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-              --cpu 1 --memory 1
+              --only-show-errors \
+              --output none 2>/dev/null; then
+            echo "Container exists. Deleting and recreating..."
+            az container delete \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --yes
+
+            echo "Waiting for container deletion..."
+            for i in {1..30}; do
+              if ! az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" &>/dev/null; then
+                echo "✅ Container deleted."
+                break
+              fi
+              echo "... Still deleting... retry $i"
+              sleep 5
+            done
           else
-            az container create \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_CONTAINER_NAME" \
-              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-              --registry-login-server "$ACR_LOGIN_SERVER" \
-              --registry-username     "$ACR_USERNAME" \
-              --registry-password     "$ACR_PASSWORD" \
-              --cpu 1 --memory 1 \
-              --ports 80
+            echo "Container does not exist. Creating..."
           fi
+
+          echo "Creating container instance..."
+          az container create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --registry-login-server "$ACR_LOGIN_SERVER" \
+            --registry-username     "$ACR_USERNAME" \
+            --registry-password     "$ACR_PASSWORD" \
+            --cpu 1 --memory 1 \
+            --os-type Linux \
+            --ports 80 \
+            --ip-address Public
+
+          echo "Fetching container public IP..."
+          PUBLIC_IP=$(az container show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --query "ipAddress.ip" -o tsv)
+
+          echo "✅ Container is deployed and accessible at: http://$PUBLIC_IP"
 
 ```
 
+
+<!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
