@@ -139,16 +139,22 @@ jobs:
               --only-show-errors \
               --output none 2>/dev/null; then
             echo "Container exists. Deleting and recreating..."
+                      az container create \
             az container delete \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
               --yes
 
-            echo "Waiting for container to be fully deleted..."
-            az container wait \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_CONTAINER_NAME" \
-              --deleted
+            echo "Waiting for container deletion..."
+            for i in {1..30}; do
+              if ! az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" &>/dev/null; then
+                echo "✅ Container deleted."
+                break
+              fi
+              echo "⏳ Still deleting... retry $i"
+              sleep 5
+            done
+
           else
             echo "Container does not exist. Creating..."
           fi
