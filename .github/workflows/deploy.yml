@@ -66,17 +66,6 @@ jobs:
           exit-code:    0
           ignore-unfixed: true
 
-      - name: Log in to Azure Container Registry
-        run: |
-          echo "${{ secrets.ACR_PASSWORD }}" | docker login "$ACR_LOGIN_SERVER" \
-            --username "${{ secrets.ACR_USERNAME }}" \
-            --password-stdin
-
-      - name: Build and Tag Docker Image
-        run: docker build -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" .
-
-      - name: Push Docker Image to ACR
-        run: docker push "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
       - name: Upload SBOM to Azure Storage
         env:
@@ -151,9 +140,9 @@ jobs:
               --output none 2>/dev/null; then
             echo "Container exists. Deleting and recreating..."
             az container delete \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_CONTAINER_NAME" \
-            --yes
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --yes
 
             echo "Waiting for container to be fully deleted..."
             az container wait \
@@ -176,8 +165,6 @@ jobs:
             --os-type Linux \
             --ports 80
 
-          fi
-
           echo "Fetching container public IP..."
           PUBLIC_IP=$(az container show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -186,6 +173,4 @@ jobs:
 
           echo "✅ Container is deployed and accessible at: http://$PUBLIC_IP"
 
-
-          fi
 
