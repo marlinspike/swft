@@ -66,9 +66,11 @@ jobs:
           exit-code:    0
           ignore-unfixed: true
 
-      - name: Log in to ACR
-        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login "$ACR_LOGIN_SERVER" \
-              --username "${{ secrets.ACR_USERNAME }}" --password-stdin
+      - name: Log in to Azure Container Registry
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login "$ACR_LOGIN_SERVER" \
+            --username "${{ secrets.ACR_USERNAME }}" \
+            --password-stdin
 
       - name: Build and Tag Docker Image
         run: docker build -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" .
