@@ -83,6 +83,16 @@ jobs:
             --container-name sboms \
             --file           sbom.cyclonedx.json \
             --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json"
+            --overwrite
+
+
+      - name: Upload SBOM to DoD SWFT REST API
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN }}" \
+            -d "${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}" \
+            https://api.swft.dod.mil/v1/sboms
 
       - name: Upload all artifacts to Azure Blob Storage
         uses: azure/CLI@v2
