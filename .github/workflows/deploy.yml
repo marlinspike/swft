@@ -151,10 +151,9 @@ jobs:
               --output none 2>/dev/null; then
             echo "Container exists. Deleting and recreating..."
             az container delete \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_CONTAINER_NAME" \
-              --yes \
-              --no-wait
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --yes
 
             echo "Waiting for container to be fully deleted..."
             az container wait \
