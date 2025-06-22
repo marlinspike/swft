@@ -149,13 +149,15 @@ jobs:
           else
             echo "Container does not exist. Creating..."
             az container create \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_CONTAINER_NAME" \
-              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-              --registry-login-server "$ACR_LOGIN_SERVER" \
-              --registry-username     "$ACR_USERNAME" \
-              --registry-password     "$ACR_PASSWORD" \
-              --cpu 1 --memory 1 \
-              --ports 80
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --registry-login-server "$ACR_LOGIN_SERVER" \
+            --registry-username     "$ACR_USERNAME" \
+            --registry-password     "$ACR_PASSWORD" \
+            --cpu 1 --memory 1 \
+            --os-type Linux \
+            --ports 80
+
           fi
 
