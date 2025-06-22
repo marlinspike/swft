@@ -58,13 +58,14 @@ jobs:
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
 
-      - name: CVE Scan (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref:    ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format:       table
-          exit-code:    0
-          ignore-unfixed: true
+      - name: CVE Scan and save report (Trivy)
+        run: |
+          trivy image \
+            --format json \
+            --output trivy-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
 
       - name: Upload SBOM to Azure Storage
@@ -81,6 +82,23 @@ jobs:
             --container-name sboms \
             --file           sbom.cyclonedx.json \
             --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
+            --overwrite
+
+
+      - name: Upload Trivy report to Azure Storage
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          az storage blob upload \
+            --auth-mode key \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --account-key  "$AZURE_STORAGE_KEY" \
+            --container-name scans \
+            --file           trivy-report.json \
+            --name           "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
             --overwrite
 
 
