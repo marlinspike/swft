@@ -155,15 +155,16 @@ jobs:
 
           echo "Creating container instance..."
           az container create \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_CONTAINER_NAME" \
-            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-            --registry-login-server "$ACR_LOGIN_SERVER" \
-            --registry-username     "$ACR_USERNAME" \
-            --registry-password     "$ACR_PASSWORD" \
-            --cpu 1 --memory 1 \
-            --os-type Linux \
-            --ports 80
+          --resource-group "$AZURE_RESOURCE_GROUP" \
+          --name "$AZURE_CONTAINER_NAME" \
+          --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+          --registry-login-server "$ACR_LOGIN_SERVER" \
+          --registry-username     "$ACR_USERNAME" \
+          --registry-password     "$ACR_PASSWORD" \
+          --cpu 1 --memory 1 \
+          --os-type Linux \
+          --ports 80 \
+          --ip-address Public
 
           echo "Fetching container public IP..."
           PUBLIC_IP=$(az container show \
