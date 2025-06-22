@@ -70,6 +70,11 @@ jobs:
         run: docker push "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
       - name: Upload SBOM to Azure Storage
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           az storage blob upload \
             --auth-mode key \
@@ -81,16 +86,18 @@ jobs:
 
       - name: Upload all artifacts to Azure Blob Storage
         uses: azure/CLI@v2
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         with:
           inlineScript: |
-            # Ensure container exists
             az storage container create \
               --account-name "$AZURE_STORAGE_ACCOUNT" \
               --account-key  "$AZURE_STORAGE_KEY" \
               --name         artifacts \
-              --fail-on-exist false
+              --public-access off
 
-            # Loop and upload with build-id prefix
             for file in ./artifacts/*; do
               filename=$(basename "$file")
               az storage blob upload \
