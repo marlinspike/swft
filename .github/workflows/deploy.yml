@@ -25,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.1
+
       - name: Checkout source
         uses: actions/checkout@v3
 
