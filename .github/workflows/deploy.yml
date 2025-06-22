@@ -139,7 +139,6 @@ jobs:
               --only-show-errors \
               --output none 2>/dev/null; then
             echo "Container exists. Deleting and recreating..."
-                      az container create \
             az container delete \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
@@ -151,26 +150,25 @@ jobs:
                 echo "✅ Container deleted."
                 break
               fi
-              echo "⏳ Still deleting... retry $i"
+              echo "... Still deleting... retry $i"
               sleep 5
             done
-
           else
             echo "Container does not exist. Creating..."
           fi
 
           echo "Creating container instance..."
           az container create \
-          --resource-group "$AZURE_RESOURCE_GROUP" \
-          --name "$AZURE_CONTAINER_NAME" \
-          --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-          --registry-login-server "$ACR_LOGIN_SERVER" \
-          --registry-username     "$ACR_USERNAME" \
-          --registry-password     "$ACR_PASSWORD" \
-          --cpu 1 --memory 1 \
-          --os-type Linux \
-          --ports 80 \
-          --ip-address Public
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --registry-login-server "$ACR_LOGIN_SERVER" \
+            --registry-username     "$ACR_USERNAME" \
+            --registry-password     "$ACR_PASSWORD" \
+            --cpu 1 --memory 1 \
+            --os-type Linux \
+            --ports 80 \
+            --ip-address Public
 
           echo "Fetching container public IP..."
           PUBLIC_IP=$(az container show \
@@ -179,5 +177,6 @@ jobs:
             --query "ipAddress.ip" -o tsv)
 
           echo "✅ Container is deployed and accessible at: http://$PUBLIC_IP"
+
 
 
