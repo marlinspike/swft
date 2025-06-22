@@ -149,15 +149,25 @@ jobs:
           else
             echo "Container does not exist. Creating..."
             az container create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+              --registry-login-server "$ACR_LOGIN_SERVER" \
+              --registry-username     "$ACR_USERNAME" \
+              --registry-password     "$ACR_PASSWORD" \
+              --cpu 1 --memory 1 \
+              --os-type Linux \
+              --ports 80
+          fi
+
+          echo "Fetching container public IP..."
+          PUBLIC_IP=$(az container show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_CONTAINER_NAME" \
-            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-            --registry-login-server "$ACR_LOGIN_SERVER" \
-            --registry-username     "$ACR_USERNAME" \
-            --registry-password     "$ACR_PASSWORD" \
-            --cpu 1 --memory 1 \
-            --os-type Linux \
-            --ports 80
+            --query "ipAddress.ip" -o tsv)
+
+          echo "✅ Container is deployed and accessible at: http://$PUBLIC_IP"
+
 
           fi
 
