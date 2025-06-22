@@ -86,13 +86,13 @@ jobs:
             --overwrite
 
 
-      - name: Upload SBOM to DoD SWFT REST API
+      - name: Upload SBOM to DoD SWFT REST API (stubbed)
         run: |
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN }}" \
-            -d "${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}" \
-            https://api.swft.dod.mil/v1/sboms
+          echo "🟡 STUB: Would POST SBOM to DoD SWFT API"
+          echo "Endpoint: https://api.swft.dod.mil/v1/sboms"
+          echo "Auth: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN }}"
+          echo "Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}"
+
 
       - name: Upload all artifacts to Azure Blob Storage
         uses: azure/CLI@v2
