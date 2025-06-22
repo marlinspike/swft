@@ -66,7 +66,14 @@ jobs:
           exit-code:    0
           ignore-unfixed: true
 
-      - name: Push Docker image to ACR
+      - name: Log in to ACR
+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login "$ACR_LOGIN_SERVER" \
+              --username "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+      - name: Build and Tag Docker Image
+        run: docker build -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" .
+
+      - name: Push Docker Image to ACR
         run: docker push "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
       - name: Upload SBOM to Azure Storage
