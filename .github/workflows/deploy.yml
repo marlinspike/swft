@@ -105,12 +105,14 @@ jobs:
             --overwrite
 
 
-      - name: Upload SBOM to DoD SWFT REST API (stubbed)
+      - name: Upload SBOM and Trivy report to DoD SWFT REST API (stubbed)
         run: |
-          echo "🟡 STUB: Would POST SBOM to DoD SWFT API"
+          echo "🟡 STUB: Would POST SBOM and Trivy report to DoD SWFT API"
           echo "Endpoint: https://api.swft.dod.mil/v1/sboms"
           echo "Auth: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN }}"
-          echo "Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}"
+          echo "SBOM Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }} (sbom.cyclonedx.json)"
+          echo "Trivy Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }} (trivy-report.json)"
+
 
 
       - name: Upload all artifacts to Azure Blob Storage
