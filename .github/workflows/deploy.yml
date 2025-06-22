@@ -98,29 +98,46 @@ jobs:
               --name         artifacts \
               --public-access off
 
-            for file in ./artifacts/*; do
-              filename=$(basename "$file")
-              az storage blob upload \
-                --account-name   "$AZURE_STORAGE_ACCOUNT" \
-                --account-key    "$AZURE_STORAGE_KEY" \
-                --container-name artifacts \
-                --file           "$file" \
-                --name           "${IMAGE_TAG}-${filename}"
-            done
+            if compgen -G "./artifacts/*" > /dev/null; then
+              for file in ./artifacts/*; do
+                filename=$(basename "$file")
+                echo "Uploading $filename..."
+                az storage blob upload \
+                  --account-name   "$AZURE_STORAGE_ACCOUNT" \
+                  --account-key    "$AZURE_STORAGE_KEY" \
+                  --container-name artifacts \
+                  --file           "$file" \
+                  --name           "${IMAGE_TAG}-${filename}"
+              done
+            else
+              echo "No files found in ./artifacts/ — skipping upload."
+            fi
 
       - name: Deploy to Azure Container Instance
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_NAME: ${{ env.AZURE_CONTAINER_NAME }}
+          ACR_LOGIN_SERVER:     ${{ env.ACR_LOGIN_SERVER }}
+          ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
+          IMAGE_NAME:           ${{ env.IMAGE_NAME }}
+          IMAGE_TAG:            ${{ env.IMAGE_TAG }}
         run: |
+          echo "Checking if container instance exists..."
           if az container show \
-               --resource-group "$AZURE_RESOURCE_GROUP" \
-               --name "$AZURE_CONTAINER_NAME" \
-               --output none; then
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --only-show-errors \
+              --output none 2>/dev/null; then
+            echo "Container exists. Updating..."
             az container update \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
               --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
               --cpu 1 --memory 1
           else
+            echo "Container does not exist. Creating..."
             az container create \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
@@ -131,3 +148,4 @@ jobs:
               --cpu 1 --memory 1 \
               --ports 80
           fi
+
