@@ -44,8 +44,11 @@ jobs:
                           --password-stdin
 
       - name: Build Docker image
-        run: docker build \
-               -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" .
+        run: |
+          docker buildx build \
+            -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --push \
+            .
 
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0.20.1
