@@ -149,24 +149,34 @@ jobs:
               --name "$AZURE_CONTAINER_NAME" \
               --only-show-errors \
               --output none 2>/dev/null; then
-            echo "Container exists. Updating..."
-            az container update \
+            echo "Container exists. Deleting and recreating..."
+            az container delete \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
-              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-              --cpu 1 --memory 1
+              --yes \
+              --no-wait
+
+            echo "Waiting for container to be fully deleted..."
+            az container wait \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --deleted
           else
             echo "Container does not exist. Creating..."
-            az container create \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_CONTAINER_NAME" \
-              --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-              --registry-login-server "$ACR_LOGIN_SERVER" \
-              --registry-username     "$ACR_USERNAME" \
-              --registry-password     "$ACR_PASSWORD" \
-              --cpu 1 --memory 1 \
-              --os-type Linux \
-              --ports 80
+          fi
+
+          echo "Creating container instance..."
+          az container create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --registry-login-server "$ACR_LOGIN_SERVER" \
+            --registry-username     "$ACR_USERNAME" \
+            --registry-password     "$ACR_PASSWORD" \
+            --cpu 1 --memory 1 \
+            --os-type Linux \
+            --ports 80
+
           fi
 
           echo "Fetching container public IP..."
