@@ -82,7 +82,7 @@ jobs:
             --account-key  "$AZURE_STORAGE_KEY" \
             --container-name sboms \
             --file           sbom.cyclonedx.json \
-            --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json"
+            --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
             --overwrite
 
 
