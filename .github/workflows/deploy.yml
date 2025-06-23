@@ -93,7 +93,8 @@ jobs:
             --container-name sboms \
             --file sbom.cyclonedx.json \
             --name "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
-            --overwrite
+            --overwrite \
+            --auth-mode login
         env:
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
@@ -107,7 +108,8 @@ jobs:
             --container-name scans \
             --file trivy-report.json \
             --name "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
-            --overwrite
+            --overwrite \
+            --auth-mode login
         env:
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
@@ -146,6 +148,7 @@ jobs:
                   --file "$file" \
                   --name "${IMAGE_TAG}-${filename}" \
                   --overwrite
+                  --auth-mode login
               done
             else
               echo "No files found in ./artifacts/ — skipping upload."
