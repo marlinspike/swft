@@ -14,7 +14,7 @@ env:
   ACR_USERNAME:        ${{ secrets.ACR_USERNAME }}
   ACR_PASSWORD:        ${{ secrets.ACR_PASSWORD }}
   IMAGE_NAME:          fastapi-demo
-  IMAGE_TAG:           ${{ github.sha }}
+  IMAGE_TAG:           ${{ secrets.IMAGE_TAG }}
   AZURE_RESOURCE_GROUP: demo-swft-cicd
   AZURE_CONTAINER_NAME: swft-fastapi
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
@@ -231,6 +231,3 @@ jobs:
             --query "ipAddress.ip" -o tsv)
 
           echo "✅ Container is deployed and accessible at: http://$PUBLIC_IP"
-
-
-
