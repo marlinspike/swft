@@ -1,5 +1,5 @@
 
-### High Level Ovrerview
+### High Level Ovrerview of DoD AI Apps and MSFT Plugins
 
 ```mermaid
 graph TD
@@ -145,20 +145,22 @@ graph TD
 
 ```mermaid
 graph TD
-  start[Start: Triggered by push to main or manual dispatch]
+  start[Start Triggered by push to main or manual dispatch]
 
-  start --> checkout[Checkout source code]
-  checkout --> azure_login[Login to Azure]
-  azure_login --> buildx[Setup Docker Buildx]
-  buildx --> acr_login[Login to Azure Container Registry]
-  acr_login --> docker_build[Build and push Docker image to ACR]
-  docker_build --> generate_sbom[Generate SBOM using Syft]
-  generate_sbom --> install_trivy[Install Trivy]
-  install_trivy --> trivy_scan[Run CVE scan and generate JSON report]
+  start --> install_trivy[Install Trivy]
+  install_trivy --> install_cosign[Install Cosign]
+  install_cosign --> checkout[Checkout source code]
+  checkout --> azure_login[Azure Login]
+  azure_login --> buildx[Set up Docker Buildx]
+  buildx --> acr_login[Login to ACR]
+  acr_login --> decode_cosign_priv[Decode Cosign private key]
+  decode_cosign_priv --> decode_cosign_pub1[Decode Cosign public key]
+  decode_cosign_pub1 --> docker_build[Build and push Docker image]
+  docker_build --> cosign_sign[Sign image with Cosign]
+  cosign_sign --> generate_sbom[Generate SBOM using Syft]
+  generate_sbom --> trivy_scan[Run CVE scan with Trivy]
+  trivy_scan --> analysis_complete[SBOM and Trivy ready]
 
-  trivy_scan --> analysis_complete[SBOM + Trivy ready]
-
-  %% Azure Blob Storage
   subgraph Azure Storage
     upload_sbom_azure[Upload SBOM to Azure Blob]
     upload_trivy_azure[Upload Trivy report to Azure Blob]
@@ -167,33 +169,30 @@ graph TD
 
   analysis_complete --> upload_sbom_azure
   analysis_complete --> upload_trivy_azure
-  analysis_complete --> artifact_check[Check for local artifacts]
+  upload_sbom_azure --> swft_stub
+  upload_trivy_azure --> swft_stub
+
+  subgraph DoD SWFT
+    swft_stub[Stub Upload SBOM and Trivy to DoD SWFT API]
+  end
+
+  swft_stub --> artifact_check[Check for local artifacts]
   artifact_check --> upload_artifacts_azure
 
-  %% Azure ACI Deployment
+  upload_artifacts_azure --> decode_cosign_pub2[Decode Cosign public key]
+  decode_cosign_pub2 --> cosign_verify[Verify container signature]
+  cosign_verify --> proceed_deploy[Proceed to ACI deployment]
+
   subgraph Azure Container Instance
-    deploy_check[Check if container exists in ACI]
-    delete_container[Delete container if exists]
-    wait_delete[Wait for deletion]
-    create_container[Create container with public IP]
-    get_ip[Fetch public IP of container]
+    proceed_deploy --> deploy_check[Check if container exists]
+    deploy_check --> delete_container[Delete container if exists]
+    delete_container --> wait_delete[Wait for deletion]
+    wait_delete --> create_container[Create container instance with public IP]
+    deploy_check --> create_container
+    create_container --> get_ip[Fetch public IP]
   end
 
-  upload_artifacts_azure --> deploy_check
-  deploy_check --> delete_container
-  delete_container --> wait_delete
-  wait_delete --> create_container
-  deploy_check --> create_container
-  create_container --> get_ip
   get_ip --> workflow_complete[Workflow complete]
-
-  %% DoD SWFT
-  subgraph DoD SWFT
-    swft_upload[Stub: Upload SBOM + Trivy to DoD SWFT API]
-  end
-
-  upload_sbom_azure -.-> swft_upload
-  upload_trivy_azure -.-> swft_upload
 
 ```
 
