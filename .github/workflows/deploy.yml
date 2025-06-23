@@ -133,11 +133,6 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         with:
           inlineScript: |
-            az storage container create \
-              --account-name "$AZURE_STORAGE_ACCOUNT" \
-              --name artifacts \
-              --public-access off
-
             if compgen -G "./artifacts/*" > /dev/null; then
               for file in ./artifacts/*; do
                 filename=$(basename "$file")
@@ -147,12 +142,13 @@ jobs:
                   --container-name artifacts \
                   --file "$file" \
                   --name "${IMAGE_TAG}-${filename}" \
-                  --overwrite
+                  --overwrite \
                   --auth-mode login
               done
             else
               echo "No files found in ./artifacts/ — skipping upload."
             fi
+
 
 
       - name: Gate Deployment on Signature Check
