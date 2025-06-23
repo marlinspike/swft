@@ -160,8 +160,6 @@ jobs:
         run: |
           cosign verify \
             --key cosign.pub \
-            --allow-insecure-registry \
-            --no-check-claims \
             --rekor-url="" \
             $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
 
@@ -172,6 +170,7 @@ jobs:
             cat verify.log
             exit 1
           fi
+
 
 
       - name: Deploy to Azure Container Instance
