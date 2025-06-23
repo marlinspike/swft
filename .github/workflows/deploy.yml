@@ -150,14 +150,18 @@ jobs:
             fi
 
 
+      - name: Decode and write Cosign public key
+        run: |
+          echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
+          chmod 644 cosign.pub
 
       - name: Gate Deployment on Signature Check
         run: |
-          cosign verify --key cosign.key $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
+          cosign verify --key cosign.pub $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
           if grep -q "Verified OK" verify.log; then
             echo "✅ Signature verified"
           else
-            echo "❌ Signature verification failed! This Container imaged is not signed or the signature is invalid. Deployment aborted."
+            echo "❌ Signature verification failed! This container image is not signed or the signature is invalid. Deployment aborted."
             cat verify.log
             exit 1
           fi
