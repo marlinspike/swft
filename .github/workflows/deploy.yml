@@ -29,7 +29,7 @@ jobs:
         uses: aquasecurity/setup-trivy@v0.2.1
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.4.0
+        uses: sigstore/cosign-installer@v3.9.0
 
       - name: Checkout source
         uses: actions/checkout@v3
@@ -50,9 +50,9 @@ jobs:
                           --password-stdin
 
 
-      - name: Write Cosign key to disk
+      - name: Decode and write Cosign key
         run: |
-          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          echo "${{ secrets.COSIGN_KEY_B64 }}" | base64 -d > cosign.key
           chmod 600 cosign.key
 
 
@@ -64,8 +64,6 @@ jobs:
             .
 
       - name: Sign the image with Cosign
-        env:
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           cosign sign --key cosign.key $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
 
