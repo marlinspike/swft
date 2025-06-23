@@ -160,7 +160,6 @@ jobs:
         run: |
           cosign verify \
             --key cosign.pub \
-            --offline \
             $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
 
           if grep -q "Verified OK" verify.log; then
@@ -170,6 +169,7 @@ jobs:
             cat verify.log
             exit 1
           fi
+
 
 
 
