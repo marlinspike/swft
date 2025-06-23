@@ -171,18 +171,8 @@ jobs:
         run: |
           cosign verify \
             --key cosign.pub \
-            --insecure-ignore-tlog=true \
-            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            > verify.log
-
-          if grep -q "Verified OK" verify.log; then
-            echo "✅ Signature verified"
-          else
-            echo "❌ Signature verification failed — deployment aborted"
-            cat verify.log
-            exit 1
-          fi
-
+            --insecure-ignore-tlog \
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
 
       - name: Deploy to Azure Container Instance
