@@ -61,6 +61,7 @@ jobs:
           chmod 644 cosign.pub
 
 
+
       - name: Build Docker image
         run: |
           docker buildx build \
@@ -68,21 +69,13 @@ jobs:
             --push \
             .
 
-      - name: Sign the container image
+      - name: Sign the image with Cosign (registry-only)
         run: |
-          cosign sign --key cosign.key $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
+          cosign sign \
+            --key cosign.key \
+            --tlog-upload=false \
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
-
-      - name: Verify container signature
-        run: |
-          cosign verify --key cosign.pub --rekor-url="" $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
-          if grep -q "Verified OK" verify.log; then
-            echo "✅ Signature verified"
-          else
-            echo "❌ Signature verification failed"
-            cat verify.log
-            exit 1
-          fi
 
 
       - name: Generate SBOM (Syft)
@@ -173,20 +166,22 @@ jobs:
           chmod 644 cosign.pub
 
 
-      - name: Gate Deployment on Signature Check
+
+      - name: Verify container signature before deploy
         run: |
           cosign verify \
             --key cosign.pub \
-            $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
+            --insecure-ignore-tlog=true \
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            > verify.log
 
           if grep -q "Verified OK" verify.log; then
             echo "✅ Signature verified"
           else
-            echo "❌ Signature verification failed! This container image is not signed or the signature is invalid. Deployment aborted."
+            echo "❌ Signature verification failed — deployment aborted"
             cat verify.log
             exit 1
           fi
-
 
 
 
