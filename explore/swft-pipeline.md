@@ -156,32 +156,45 @@ graph TD
   generate_sbom --> install_trivy[Install Trivy]
   install_trivy --> trivy_scan[Run CVE scan and generate JSON report]
 
-  trivy_scan --> sbom_ready[SBOM + Trivy ready]
+  trivy_scan --> analysis_complete[SBOM + Trivy ready]
 
-  subgraph Azure Cloud
-    sbom_ready --> upload_sbom_azure[Upload SBOM to Azure Blob Storage]
-    sbom_ready --> upload_trivy_azure[Upload Trivy report to Azure Blob Storage]
-
-    upload_trivy_azure --> artifacts_check[Check for local artifacts]
-    artifacts_check --> upload_artifacts_azure[Upload artifacts to Azure Blob Storage]
-
-    upload_artifacts_azure --> deploy_check[Check if container exists in ACI]
-    deploy_check --> delete_container[Delete existing container if found]
-    delete_container --> wait_delete[Wait for container deletion]
-    wait_delete --> create_container[Create container instance with public IP]
-    deploy_check --> create_container
-    create_container --> get_ip[Fetch container public IP]
+  %% Azure Blob Storage
+  subgraph Azure Storage
+    upload_sbom_azure[Upload SBOM to Azure Blob]
+    upload_trivy_azure[Upload Trivy report to Azure Blob]
+    upload_artifacts_azure[Upload build artifacts to Azure Blob]
   end
 
+  analysis_complete --> upload_sbom_azure
+  analysis_complete --> upload_trivy_azure
+  analysis_complete --> artifact_check[Check for local artifacts]
+  artifact_check --> upload_artifacts_azure
+
+  %% Azure ACI Deployment
+  subgraph Azure Container Instance
+    deploy_check[Check if container exists in ACI]
+    delete_container[Delete container if exists]
+    wait_delete[Wait for deletion]
+    create_container[Create container with public IP]
+    get_ip[Fetch public IP of container]
+  end
+
+  upload_artifacts_azure --> deploy_check
+  deploy_check --> delete_container
+  delete_container --> wait_delete
+  wait_delete --> create_container
+  deploy_check --> create_container
+  create_container --> get_ip
   get_ip --> workflow_complete[Workflow complete]
 
-  %% Isolated DoD SWFT block
+  %% DoD SWFT
   subgraph DoD SWFT
     swft_upload[Stub: Upload SBOM + Trivy to DoD SWFT API]
   end
 
   upload_sbom_azure -.-> swft_upload
   upload_trivy_azure -.-> swft_upload
+
 ```
 
 
