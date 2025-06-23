@@ -87,37 +87,31 @@ jobs:
 
 
       - name: Upload SBOM to Azure Storage
-        env:
-          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           az storage blob upload \
-            --auth-mode key \
             --account-name "$AZURE_STORAGE_ACCOUNT" \
-            --account-key  "$AZURE_STORAGE_KEY" \
             --container-name sboms \
-            --file           sbom.cyclonedx.json \
-            --name           "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
+            --file sbom.cyclonedx.json \
+            --name "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
             --overwrite
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
 
       - name: Upload Trivy report to Azure Storage
-        env:
-          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           az storage blob upload \
-            --auth-mode key \
             --account-name "$AZURE_STORAGE_ACCOUNT" \
-            --account-key  "$AZURE_STORAGE_KEY" \
             --container-name scans \
-            --file           trivy-report.json \
-            --name           "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
+            --file trivy-report.json \
+            --name "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
             --overwrite
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
 
       - name: Upload SBOM and Trivy report to DoD SWFT REST API (stubbed)
@@ -134,14 +128,12 @@ jobs:
         uses: azure/CLI@v2
         env:
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         with:
           inlineScript: |
             az storage container create \
               --account-name "$AZURE_STORAGE_ACCOUNT" \
-              --account-key  "$AZURE_STORAGE_KEY" \
-              --name         artifacts \
+              --name artifacts \
               --public-access off
 
             if compgen -G "./artifacts/*" > /dev/null; then
@@ -149,15 +141,16 @@ jobs:
                 filename=$(basename "$file")
                 echo "Uploading $filename..."
                 az storage blob upload \
-                  --account-name   "$AZURE_STORAGE_ACCOUNT" \
-                  --account-key    "$AZURE_STORAGE_KEY" \
+                  --account-name "$AZURE_STORAGE_ACCOUNT" \
                   --container-name artifacts \
-                  --file           "$file" \
-                  --name           "${IMAGE_TAG}-${filename}"
+                  --file "$file" \
+                  --name "${IMAGE_TAG}-${filename}" \
+                  --overwrite
               done
             else
               echo "No files found in ./artifacts/ — skipping upload."
             fi
+
 
       - name: Gate Deployment on Signature Check
         run: |
