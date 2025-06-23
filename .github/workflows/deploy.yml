@@ -50,10 +50,15 @@ jobs:
                           --password-stdin
 
 
-      - name: Decode and write Cosign key
+      - name: Decode Cosign private key
         run: |
           echo "${{ secrets.COSIGN_KEY_B64 }}" | base64 -d > cosign.key
           chmod 600 cosign.key
+
+      - name: Decode Cosign public key
+        run: |
+          echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
+          chmod 644 cosign.pub
 
 
       - name: Build Docker image
@@ -63,9 +68,21 @@ jobs:
             --push \
             .
 
-      - name: Sign the image with Cosign
+      - name: Sign the container image
         run: |
           cosign sign --key cosign.key $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
+
+
+      - name: Verify container signature
+        run: |
+          cosign verify --key cosign.pub --rekor-url="" $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG > verify.log
+          if grep -q "Verified OK" verify.log; then
+            echo "✅ Signature verified"
+          else
+            echo "❌ Signature verification failed"
+            cat verify.log
+            exit 1
+          fi
 
 
       - name: Generate SBOM (Syft)
