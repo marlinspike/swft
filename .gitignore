@@ -1,5 +1,6 @@
 # Custom
 .note.md
+*.ignore
 
 
 # Python-generated files
