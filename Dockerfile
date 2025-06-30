@@ -1,4 +1,4 @@
-FROM cgr.dev/chainguard/python:3.11-dev AS base
+FROM cgr.dev/chainguard/python:latest-dev AS base
 
 WORKDIR /app
 
