@@ -1,25 +1,27 @@
-# Stage: Build in wolfi-base
-FROM cgr.dev/chainguard/wolfi-base AS builder
-ARG version=3.11
+FROM python:3.11-slim
 
 WORKDIR /app
-RUN apk add python-${version} py${version}-pip && \
-    chown -R nonroot:nonroot /app/
-USER nonroot
 
-COPY requirements.txt app/ templates/ static/ /app/
-RUN pip install --user -r requirements.txt
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Stage: Runtime on Chainguard distroless Python
-FROM cgr.dev/chainguard/python:latest
+# Install pip if needed
+RUN python -m ensurepip --upgrade
 
-WORKDIR /app
-ENV PATH="/home/nonroot/.local/bin:$PATH"
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-COPY --from=builder /home/nonroot/.local /home/nonroot/.local
-COPY app/ templates/ static/ /app/
+# Copy application code
+COPY app/ app/
+COPY templates/ templates/
+COPY static/ static/
 
+# Expose port 80
 EXPOSE 80
+
+# Default command to run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
-
-
