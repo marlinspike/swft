@@ -1,4 +1,4 @@
-name: SWFT Container CI/CD (AzureCloud, no-bicep)
+name: SWFT Container CI/CD (Gov, no-bicep)
 
 on:
   push:
@@ -55,6 +55,11 @@ env:
   AZURE_CONTAINER_NAME: swft-fastapi
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
+  # --- Trivy policy via repository variables ---
+  FAIL_ON_TRIVY:        ${{ vars.FAIL_ON_TRIVY || 'true' }}
+  TRIVY_SEVERITY:       ${{ vars.TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+  TRIVY_IGNORE_UNFIXED: ${{ vars.TRIVY_IGNORE_UNFIXED || 'true' }}
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -66,11 +71,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login (Service Principal, AzureCloud)
+      - name: Azure Login (Service Principal, Gov)
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          environment: azureCloud
+          environment: azureUSGovernment
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -117,14 +122,15 @@ jobs:
       - name: Run Trivy vulnerability scanner (image)
         id: trivy
         uses: aquasecurity/trivy-action@0.33.1
-        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy == false }}
+        continue-on-error: ${{ env.FAIL_ON_TRIVY == 'false' }}
         with:
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'json'
           output: 'trivy-report.json'
-          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || true }}
-          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || 'HIGH,CRITICAL' }}
-          exit-code: '1'
+          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
+          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
+          exit-code: ${{ env.FAIL_ON_TRIVY == 'false' && '0' || '1' }}
+          # scanners: 'vuln'  # uncomment to skip secret scanning for speed
 
       - name: Verify container signature (Cosign)
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify == false }}
