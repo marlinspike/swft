@@ -121,7 +121,7 @@ jobs:
           ignore-unfixed: ${{ env.TRIVY_IGNORE_UNFIXED }}
           scanners: 'vuln'
           exit-code: ${{ env.FAIL_ON_TRIVY == 'false' && '0' || '1' }}
-          args: --skip-version-check
+          hide-progress: true
 
       - name: Verify container signature (Cosign)
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify == false }}
