@@ -1,4 +1,4 @@
-name: SWFT Container CI/CD (Gov, no-bicep)
+name: SWFT Container CI/CD (AzureCloud, no-bicep)
 
 on:
   push:
@@ -66,11 +66,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login (Service Principal, Gov)
+      - name: Azure Login (Service Principal, AzureCloud)
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          environment: azureUSGovernment
+          environment: azureCloud
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
