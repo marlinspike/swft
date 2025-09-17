@@ -21,6 +21,19 @@ on:
         description: "Azure container for vulnerability scans"
         type: string
         default: "scans"
+      # ---- Trivy controls for manual runs only ----
+      fail_on_trivy:
+        description: "Fail the workflow if Trivy finds vulnerabilities (manual runs only)"
+        type: boolean
+        default: false
+      trivy_severity:
+        description: "Severities to gate on (comma-separated)"
+        type: string
+        default: "HIGH,CRITICAL"
+      trivy_ignore_unfixed:
+        description: "Ignore unfixed vulnerabilities"
+        type: boolean
+        default: true
       fail_on_cosign_verify:
         description: "Fail the workflow if Cosign verify fails"
         type: boolean
@@ -34,7 +47,7 @@ env:
   # Container registry
   ACR_LOGIN_SERVER:     ${{ secrets.ACR_LOGIN_SERVER }}
   ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}     # SP clientId or ACR admin username
-  ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}     # matching secret (SP clientSecret or ACR admin password)
+  ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}     # SP clientSecret or ACR admin password
   IMAGE_NAME:           fastapi-demo
   IMAGE_TAG:            ${{ secrets.IMAGE_TAG }}
 
@@ -43,8 +56,7 @@ env:
   AZURE_CONTAINER_NAME: swft-fastapi
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
-  # Trivy policy via repo variables (works for push and dispatch)
-  FAIL_ON_TRIVY:        ${{ vars.FAIL_ON_TRIVY || 'true' }}
+  # ---- Trivy defaults for push runs (won't fail the job) ----
   TRIVY_SEVERITY:       ${{ vars.TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
   TRIVY_IGNORE_UNFIXED: ${{ vars.TRIVY_IGNORE_UNFIXED || 'true' }}
 
@@ -111,12 +123,11 @@ jobs:
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
 
-      # Trivy: always exit 0, we enforce policy in the next step
+      # ---- Trivy: ALWAYS exit 0; we enforce policy next ----
       - name: Run Trivy vulnerability scanner (image)
         id: trivy
         uses: aquasecurity/trivy-action@0.33.1
         env:
-          # Help Trivy if it needs to auth to a private ACR
           TRIVY_USERNAME: ${{ env.ACR_USERNAME }}
           TRIVY_PASSWORD: ${{ env.ACR_PASSWORD }}
         with:
@@ -125,22 +136,29 @@ jobs:
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'json'
           output: 'trivy-report.json'
-          severity: ${{ env.TRIVY_SEVERITY }}
-          ignore-unfixed: ${{ env.TRIVY_IGNORE_UNFIXED }}
+          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
+          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
           scanners: 'vuln'
           hide-progress: true
           cache: true
           cache-dir: ${{ github.workspace }}/.cache/trivy
           exit-code: '0'
 
-      - name: Enforce Trivy policy (fail or continue based on variables)
+      - name: Ensure jq present
+        run: jq --version || (sudo apt-get update && sudo apt-get install -y jq)
+
+      - name: Enforce Trivy policy (manual runs can fail; pushes do NOT)
+        env:
+          POLICY_FAIL_ON_TRIVY:        ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || 'false' }}
+          POLICY_TRIVY_SEVERITY:       ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
+          POLICY_TRIVY_IGNORE_UNFIXED: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
         run: |
           set -e
           if [ ! -s trivy-report.json ]; then
             echo "Trivy report missing or empty"; exit 2
           fi
 
-          SEVERITIES="${TRIVY_SEVERITY}"
+          SEVERITIES="$POLICY_TRIVY_SEVERITY"
           COUNT=$(jq --arg sev "$SEVERITIES" '
             [.Results[].Vulnerabilities[]? as $v
               | ($sev | split(",")) as $levels
@@ -151,16 +169,17 @@ jobs:
           {
             echo "### Trivy summary"
             echo ""
+            echo "- Fail on Trivy (manual only): $POLICY_FAIL_ON_TRIVY"
             echo "- Severities: $SEVERITIES"
-            echo "- Ignore unfixed: $TRIVY_IGNORE_UNFIXED"
+            echo "- Ignore unfixed: $POLICY_TRIVY_IGNORE_UNFIXED"
             echo "- Findings: $COUNT"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$FAIL_ON_TRIVY" = "true" ] && [ "$COUNT" -gt 0 ]; then
-            echo "Failing due to Trivy findings."
+          if [ "$POLICY_FAIL_ON_TRIVY" = "true" ] && [ "$COUNT" -gt 0 ]; then
+            echo "Failing due to Trivy findings (manual run opted-in)."
             exit 1
           fi
-          echo "Continuing despite findings (policy)."
+          echo "Continuing (policy)."
 
       # ---------- Optional Azure uploads (RBAC, no SAS) ----------
       - name: Upload SBOM to Azure Storage
