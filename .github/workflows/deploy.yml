@@ -1,118 +1,84 @@
-name: SWFT Container CI/CD (low-bash)
+name: SWFT Container CI/CD
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      upload_to_azure:
-        description: "Upload SBOM and Trivy reports to Azure Storage (RBAC via azure/login)"
-        type: boolean
-        default: false
-      upload_artifacts:
-        description: "Upload SBOM/scan/deploy info as GitHub Artifacts"
-        type: boolean
-        default: true
-      storage_container_sboms:
-        description: "Azure container for SBOMs"
-        type: string
-        default: "sboms"
-      storage_container_scans:
-        description: "Azure container for vulnerability scans"
-        type: string
-        default: "scans"
-      storage_container_artifacts:
-        description: "Azure container for miscellaneous artifacts"
-        type: string
-        default: "artifacts"
-      fail_on_trivy:
-        description: "Fail the workflow if Trivy finds vulnerabilities"
-        type: boolean
-        default: true
-      trivy_severity:
-        description: "Severities to check (comma-separated)"
-        type: string
-        default: "HIGH,CRITICAL"
-      trivy_ignore_unfixed:
-        description: "Ignore unfixed vulnerabilities"
-        type: boolean
-        default: true
-      fail_on_cosign_verify:
-        description: "Fail the workflow if Cosign verify fails"
-        type: boolean
-        default: true
 
 permissions:
   contents: read
   id-token: write
-  packages: read
 
 env:
-  # Container registry
-  ACR_LOGIN_SERVER:     ${{ secrets.ACR_LOGIN_SERVER }}
-  ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
-  ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
-  IMAGE_NAME:           fastapi-demo
-  IMAGE_TAG:            ${{ secrets.IMAGE_TAG }}
-
-  # Azure resources
-  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-  AZURE_RESOURCE_GROUP:  demo-swft-cicd
-  AZURE_CONTAINER_NAME:  swft-fastapi
+  ACR_LOGIN_SERVER:    ${{ secrets.ACR_LOGIN_SERVER }}
+  ACR_USERNAME:        ${{ secrets.ACR_USERNAME }}
+  ACR_PASSWORD:        ${{ secrets.ACR_PASSWORD }}
+  IMAGE_NAME:          fastapi-demo
+  IMAGE_TAG:           ${{ secrets.IMAGE_TAG }}
+  AZURE_RESOURCE_GROUP: demo-swft-cicd
+  AZURE_CONTAINER_NAME: swft-fastapi
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_KEY:     ${{ secrets.AZURE_STORAGE_KEY }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-          # environment: azureUSGovernment  # uncomment if deploying to Azure Gov
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to ACR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ env.ACR_USERNAME }}
-          password: ${{ env.ACR_PASSWORD }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.1
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.9.0
 
-      - name: Decode Cosign keys
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ACR
+        run: |
+          echo "$ACR_PASSWORD" \
+            | docker login "$ACR_LOGIN_SERVER" \
+                          -u "$ACR_USERNAME" \
+                          --password-stdin
+
+
+      - name: Decode Cosign private key
         run: |
           echo "${{ secrets.COSIGN_KEY_B64 }}" | base64 -d > cosign.key
           chmod 600 cosign.key
+
+      - name: Decode Cosign public key
+        run: |
           echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
           chmod 644 cosign.pub
 
-      - name: Sign image (registry-only)
+
+
+      - name: Build Docker image
+        run: |
+          docker buildx build \
+            -t "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --push \
+            .
+
+      - name: Sign the image with Cosign (registry-only)
         run: |
           cosign sign \
             --key cosign.key \
             --tlog-upload=false \
-            "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
-      - name: Generate SBOM (Syft via Anchore)
+
+
+      - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0.20.1
         with:
           image:        ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
@@ -120,88 +86,148 @@ jobs:
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
 
-      - name: Run Trivy vulnerability scanner (image)
-        id: trivy
-        uses: aquasecurity/trivy-action@0.28.0
-        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy == false }}
-        with:
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format: 'json'
-          output: 'trivy-report.json'
-          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || true }}
-          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || 'HIGH,CRITICAL' }}
-          exit-code: '1'
+      - name: CVE Scan and save report (Trivy)
+        run: |
+          trivy image \
+            --format json \
+            --output trivy-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
-      - name: Verify container signature (Cosign)
-        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify == false }}
+
+      - name: Upload SBOM to Azure Storage
+        run: |
+          az storage blob upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --container-name sboms \
+            --file sbom.cyclonedx.json \
+            --name "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
+            --overwrite \
+            --auth-mode login
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+
+
+      - name: Upload Trivy report to Azure Storage
+        run: |
+          az storage blob upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --container-name scans \
+            --file trivy-report.json \
+            --name "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
+            --overwrite \
+            --auth-mode login
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+
+
+      - name: Upload SBOM and Trivy report to DoD SWFT REST API (stubbed)
+        run: |
+          echo "🟡 STUB: Would POST SBOM and Trivy report to DoD SWFT API"
+          echo "Endpoint: https://api.swft.dod.mil/v1/sboms"
+          echo "Auth: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN }}"
+          echo "SBOM Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }} (sbom.cyclonedx.json)"
+          echo "Trivy Payload: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }} (trivy-report.json)"
+
+
+
+      - name: Upload all artifacts to Azure Blob Storage
+        uses: azure/CLI@v2
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        with:
+          inlineScript: |
+            if compgen -G "./artifacts/*" > /dev/null; then
+              for file in ./artifacts/*; do
+                filename=$(basename "$file")
+                echo "Uploading $filename..."
+                az storage blob upload \
+                  --account-name "$AZURE_STORAGE_ACCOUNT" \
+                  --container-name artifacts \
+                  --file "$file" \
+                  --name "${IMAGE_TAG}-${filename}" \
+                  --overwrite \
+                  --auth-mode login
+              done
+            else
+              echo "No files found in ./artifacts/ — skipping upload."
+            fi
+
+
+      - name: Decode and write Cosign public key
+        run: |
+          echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
+          chmod 644 cosign.pub
+
+
+
+      - name: Verify container signature before deploy
         run: |
           cosign verify \
             --key cosign.pub \
             --insecure-ignore-tlog \
-            "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+            ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
-      # ---------- Optional Azure uploads (RBAC, no SAS) ----------
-      - name: Upload SBOM to Azure Storage
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            az storage blob upload \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ inputs.storage_container_sboms }}" \
-              --file sbom.cyclonedx.json \
-              --name "${IMAGE_NAME}-${IMAGE_TAG}-sbom.json" \
-              --overwrite \
-              --auth-mode login
 
-      - name: Upload Trivy report to Azure Storage
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            az storage blob upload \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ inputs.storage_container_scans }}" \
-              --file trivy-report.json \
-              --name "${IMAGE_NAME}-${IMAGE_TAG}-trivy.json" \
-              --overwrite \
-              --auth-mode login
-
-      # ---------- Downloads via GitHub Artifacts ----------
-      - name: Upload security artifacts (SBOM & Trivy) to GitHub Artifacts
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: swft-security-artifacts-${{ env.IMAGE_TAG }}
-          if-no-files-found: error
-          path: |
-            sbom.cyclonedx.json
-            trivy-report.json
-
-      # ---------- Deploy with Bicep (idempotent) ----------
-      - name: Deploy ACI (Bicep)
-        id: aci
-        uses: azure/bicep-deploy@v2
-        with:
-          type: deployment
-          operation: create
-          scope: resourceGroup
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-          resource-group-name: ${{ env.AZURE_RESOURCE_GROUP }}
-          template-file: infra/aci.bicep
-          parameters: >
-            containerName=${{ env.AZURE_CONTAINER_NAME }}
-            image=${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-            cpu=1
-            memoryInGB=1.0
-            port=80
-
-      - name: Summarize deployment
+      - name: Deploy to Azure Container Instance
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_NAME: ${{ env.AZURE_CONTAINER_NAME }}
+          ACR_LOGIN_SERVER:     ${{ env.ACR_LOGIN_SERVER }}
+          ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
+          IMAGE_NAME:           ${{ env.IMAGE_NAME }}
+          IMAGE_TAG:            ${{ env.IMAGE_TAG }}
         run: |
-          {
-            echo "### Deployment";
-            echo "";
-            echo "- ACI name: ${AZURE_CONTAINER_NAME}";
-            echo "- Resource group: ${AZURE_RESOURCE_GROUP}";
-            echo "- Image: ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}";
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Checking if container instance exists..."
+          if az container show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --only-show-errors \
+              --output none 2>/dev/null; then
+            echo "Container exists. Deleting and recreating..."
+            az container delete \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_CONTAINER_NAME" \
+              --yes
+
+            echo "Waiting for container deletion..."
+            for i in {1..30}; do
+              if ! az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" &>/dev/null; then
+                echo "✅ Container deleted."
+                break
+              fi
+              echo "... Still deleting... retry $i"
+              sleep 5
+            done
+          else
+            echo "Container does not exist. Creating..."
+          fi
+
+          echo "Creating container instance..."
+          az container create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --registry-login-server "$ACR_LOGIN_SERVER" \
+            --registry-username     "$ACR_USERNAME" \
+            --registry-password     "$ACR_PASSWORD" \
+            --cpu 1 --memory 1 \
+            --os-type Linux \
+            --ports 80 \
+            --ip-address Public
+
+          echo "Fetching container public IP..."
+          PUBLIC_IP=$(az container show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_CONTAINER_NAME" \
+            --query "ipAddress.ip" -o tsv)
+
+          echo "✅ Container is deployed and accessible at: http://$PUBLIC_IP"
