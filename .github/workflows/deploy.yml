@@ -8,7 +8,7 @@ on:
       upload_to_azure:
         description: "Upload SBOM and Trivy reports to Azure Storage (RBAC via azure/login)"
         type: boolean
-        default: false
+        default: true
       upload_artifacts:
         description: "Upload SBOM/scan/deploy info as GitHub Artifacts"
         type: boolean
