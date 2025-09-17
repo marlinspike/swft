@@ -1,4 +1,4 @@
-name: SWFT Container CI/CD (Gov, no-bicep)
+name: SWFT Container CI/CD (AzureCloud, no-bicep)
 
 on:
   push:
@@ -21,18 +21,6 @@ on:
         description: "Azure container for vulnerability scans"
         type: string
         default: "scans"
-      fail_on_trivy:
-        description: "Fail the workflow if Trivy finds vulnerabilities"
-        type: boolean
-        default: true
-      trivy_severity:
-        description: "Severities to check (comma-separated)"
-        type: string
-        default: "HIGH,CRITICAL"
-      trivy_ignore_unfixed:
-        description: "Ignore unfixed vulnerabilities"
-        type: boolean
-        default: true
       fail_on_cosign_verify:
         description: "Fail the workflow if Cosign verify fails"
         type: boolean
@@ -55,7 +43,7 @@ env:
   AZURE_CONTAINER_NAME: swft-fastapi
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
-  # --- Trivy policy via repository variables ---
+  # --- Trivy policy via repository variables (controls push and dispatch runs) ---
   FAIL_ON_TRIVY:        ${{ vars.FAIL_ON_TRIVY || 'true' }}
   TRIVY_SEVERITY:       ${{ vars.TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
   TRIVY_IGNORE_UNFIXED: ${{ vars.TRIVY_IGNORE_UNFIXED || 'true' }}
@@ -76,12 +64,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           environment: azureCloud
-
-      - name: Verify Azure context
-        run: |
-          echo "Cloud: $(az cloud show --query name -o tsv)"
-          echo "Sub:   $(az account show --query id -o tsv)"
-          echo "Tenant:$(az account show --query tenantId -o tsv)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -125,18 +107,21 @@ jobs:
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
 
+      # ---- Trivy: vuln-only, governed by repo variables; still uploads report if failing ----
       - name: Run Trivy vulnerability scanner (image)
         id: trivy
         uses: aquasecurity/trivy-action@0.33.1
         continue-on-error: ${{ env.FAIL_ON_TRIVY == 'false' }}
         with:
+          scan-type: 'image'
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'json'
           output: 'trivy-report.json'
-          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
-          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: ${{ env.TRIVY_IGNORE_UNFIXED }}
+          scanners: 'vuln'
           exit-code: ${{ env.FAIL_ON_TRIVY == 'false' && '0' || '1' }}
-          # scanners: 'vuln'  # uncomment to skip secret scanning for speed
+          args: --skip-version-check
 
       - name: Verify container signature (Cosign)
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify == false }}
@@ -173,9 +158,9 @@ jobs:
               --overwrite \
               --auth-mode login
 
-      # ---------- Downloads via GitHub Artifacts ----------
+      # ---------- Downloads via GitHub Artifacts (always run) ----------
       - name: Upload security artifacts (SBOM & Trivy) to GitHub Artifacts
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.upload_artifacts }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
         uses: actions/upload-artifact@v4
         with:
           name: swft-security-artifacts-${{ env.IMAGE_TAG }}
@@ -250,7 +235,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload deployment info to GitHub Artifacts
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.upload_artifacts }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
         uses: actions/upload-artifact@v4
         with:
           name: aci-deploy-info-${{ env.IMAGE_TAG }}
