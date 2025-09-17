@@ -71,11 +71,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login (Service Principal, Gov)
+      - name: Azure Login (Service Principal, AzureCloud)
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          environment: azureUSGovernment
+          environment: azureCloud
+
+      - name: Verify Azure context
+        run: |
+          echo "Cloud: $(az cloud show --query name -o tsv)"
+          echo "Sub:   $(az account show --query id -o tsv)"
+          echo "Tenant:$(az account show --query tenantId -o tsv)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
