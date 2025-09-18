@@ -69,7 +69,7 @@ env:
   TRIVY_SEVERITY:       ${{ vars.TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
   TRIVY_IGNORE_UNFIXED: ${{ vars.TRIVY_IGNORE_UNFIXED || 'true' }}
 
-  # Project Name and Run ID
+  # Project Name and Run metadata
   PROJECT_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.project_name || vars.PROJECT_NAME || github.event.repository.name }}
   RUN_ID:       ${{ github.run_id }}
   RUN_NUMBER:   ${{ github.run_number }}
@@ -91,16 +91,18 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           environment: azureCloud
 
-      - name: Derive naming and common vars
+      - name: Derive names, prefixes, and timestamps
         run: |
           set -e
           FILE_PREFIX="${PROJECT_NAME}-${RUN_ID}"
           echo "FILE_PREFIX=$FILE_PREFIX" >> $GITHUB_ENV
-          echo "SBOM_FILE=${FILE_PREFIX}-sbom.json" >> $GITHUB_ENV
-          echo "TRIVY_FILE=${FILE_PREFIX}-trivy.json" >> $GITHUB_ENV
+          echo "SBOM_FILE=${FILE_PREFIX}-sbom.json"    >> $GITHUB_ENV
+          echo "TRIVY_FILE=${FILE_PREFIX}-trivy.json"  >> $GITHUB_ENV
           echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif" >> $GITHUB_ENV
           echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt" >> $GITHUB_ENV
           echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json" >> $GITHUB_ENV
+          # Single 'folder' (virtual path) for ADLS/Blob uploads
+          echo "BLOB_PREFIX=${PROJECT_NAME}-${RUN_ID}"  >> $GITHUB_ENV
           echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" >> $GITHUB_ENV
           date -u +%FT%TZ | xargs -I{} echo "RUN_TIMESTAMP={}" >> $GITHUB_ENV
 
@@ -157,8 +159,7 @@ jobs:
             echo "COSIGN_VERIFY_STATUS=passed" >> $GITHUB_ENV
           else
             echo "COSIGN_VERIFY_STATUS=failed" >> $GITHUB_ENV
-            echo "Cosign verify failed:"
-            cat /tmp/cosign.verify || true
+            echo "Cosign verify failed:"; cat /tmp/cosign.verify || true
             if [ "$POLICY_FAIL_ON_VERIFY" = "true" ]; then
               exit 1
             fi
@@ -196,34 +197,22 @@ jobs:
       - name: Ensure jq present
         run: jq --version || (sudo apt-get update && sudo apt-get install -y jq)
 
-      - name: Show generated files
-        run: |
-          ls -lh "${SBOM_FILE}" || true
-          ls -lh "${TRIVY_FILE}" || true
-
-      - name: Normalize filenames to FILE_PREFIX
+      - name: Canonicalize filenames in repo root
         run: |
           set -e
-          echo "Expected:"
-          echo "  SBOM_FILE=$SBOM_FILE"
-          echo "  TRIVY_FILE=$TRIVY_FILE"
-          echo "  SARIF_FILE=$SARIF_FILE"
-          echo "Existing files in workspace:"
-          ls -la
-
-          # If actions produced legacy names, rename them to the canonical names
-          [ -f sbom.cyclonedx.json ] && mv sbom.cyclonedx.json "$SBOM_FILE"
-          [ -f trivy-report.json ] && mv trivy-report.json "$TRIVY_FILE"
-          [ -f trivy-results.sarif ] && mv trivy-results.sarif "$SARIF_FILE"
-
-          # Final confirmation
-          echo "After normalization:"
-          ls -l "$SBOM_FILE" "$TRIVY_FILE" "$SARIF_FILE"
-
+          echo "Looking for generator outputs (legacy and canonical names)..."
+          ls -la || true
+          # If actions used legacy names, copy to canonical filenames in repo root
+          [ -f sbom.cyclonedx.json ] && cp -f sbom.cyclonedx.json "${SBOM_FILE}"
+          [ -f trivy-report.json ]   && cp -f trivy-report.json   "${TRIVY_FILE}"
+          [ -f trivy-results.sarif ] && cp -f trivy-results.sarif "${SARIF_FILE}"
+          # If actions already wrote canonical names, they are left as-is
+          echo "Final expected files:"
+          ls -l "${SBOM_FILE}" "${TRIVY_FILE}" || true
 
       - name: Enforce Trivy policy (manual runs can fail; pushes do NOT)
         env:
-          POLICY_FAIL_ON_TRIVY:        ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || 'false' }}
+          POLICY_FAIL_ON_TRIVY:        ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || (vars.FAIL_ON_TRIVY || 'false') }}
           POLICY_TRIVY_SEVERITY:       ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
           POLICY_TRIVY_IGNORE_UNFIXED: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
         run: |
@@ -231,17 +220,14 @@ jobs:
           if [ ! -s "${TRIVY_FILE}" ]; then
             echo "Trivy report missing or empty"; exit 2
           fi
-
           SEVERITIES="$POLICY_TRIVY_SEVERITY"
           COUNT=$(jq --arg sev "$SEVERITIES" '
             [.Results[].Vulnerabilities[]? as $v
               | ($sev | split(",")) as $levels
               | select($levels | index($v.Severity))
             ] | length' "${TRIVY_FILE}")
-
           echo "TRIVY_FINDINGS=$COUNT" >> $GITHUB_ENV
           echo "Findings at severities [$SEVERITIES]: $COUNT"
-
           {
             echo "### Trivy summary"
             echo ""
@@ -250,7 +236,6 @@ jobs:
             echo "- Ignore unfixed: $POLICY_TRIVY_IGNORE_UNFIXED"
             echo "- Findings: $COUNT"
           } >> "$GITHUB_STEP_SUMMARY"
-
           if [ "$POLICY_FAIL_ON_TRIVY" = "true" ] && [ "$COUNT" -gt 0 ]; then
             echo "Failing due to Trivy findings (manual run opted-in)."
             exit 1
@@ -270,13 +255,22 @@ jobs:
           scanners: 'vuln'
           exit-code: '0'
 
+      - name: Verify three artifacts exist (root)
+        run: |
+          set -e
+          for f in "${SBOM_FILE}" "${TRIVY_FILE}" "${SARIF_FILE}"; do
+            [ -s "$f" ] || { echo "Missing $f"; exit 2; }
+          done
+          echo "All files present:"
+          ls -l "${SBOM_FILE}" "${TRIVY_FILE}" "${SARIF_FILE}"
+
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: ${{ env.SARIF_FILE }}
           category: trivy
 
-      # ---------- Optional Azure uploads (RBAC, no SAS) ----------
+      # ---------- Optional Azure uploads (RBAC, ADLS Gen2 path prefix) ----------
       - name: Ensure Azure containers
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
         uses: azure/CLI@v2
@@ -286,7 +280,7 @@ jobs:
             az storage container create --name "${{ inputs.storage_container_scans }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
             az storage container create --name "${{ inputs.storage_container_runs }}"  --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
 
-      - name: Upload SBOM to Azure Storage
+      - name: Upload SBOM to Azure Storage (single folder)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
         uses: azure/CLI@v2
         with:
@@ -295,13 +289,13 @@ jobs:
               --account-name "${AZURE_STORAGE_ACCOUNT}" \
               --container-name "${{ inputs.storage_container_sboms }}" \
               --file "${SBOM_FILE}" \
-              --name "${SBOM_FILE}" \
+              --name "${BLOB_PREFIX}/${SBOM_FILE}" \
               --overwrite \
               --auth-mode login
-            SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_sboms }}" --name "${SBOM_FILE}" -o tsv)
+            SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_sboms }}" --name "${BLOB_PREFIX}/${SBOM_FILE}" -o tsv)
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
-      - name: Upload Trivy report to Azure Storage
+      - name: Upload Trivy report to Azure Storage (single folder)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
         uses: azure/CLI@v2
         with:
@@ -310,14 +304,14 @@ jobs:
               --account-name "${AZURE_STORAGE_ACCOUNT}" \
               --container-name "${{ inputs.storage_container_scans }}" \
               --file "${TRIVY_FILE}" \
-              --name "${TRIVY_FILE}" \
+              --name "${BLOB_PREFIX}/${TRIVY_FILE}" \
               --overwrite \
               --auth-mode login
-            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_scans }}" --name "${TRIVY_FILE}" -o tsv)
+            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_scans }}" --name "${BLOB_PREFIX}/${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
-      # ---------- Downloads via GitHub Artifacts (always run) ----------
-      - name: Upload security artifacts (SBOM & Trivy & SARIF)
+      # ---------- Upload exact files as GitHub Artifacts (no directories) ----------
+      - name: Upload security artifacts (three files)
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
         uses: actions/upload-artifact@v4
         with:
@@ -350,7 +344,6 @@ jobs:
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_CONTAINER_NAME" \
               --yes
-
             echo "Waiting for container deletion..."
             for i in {1..30}; do
               if ! az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" &>/dev/null; then
@@ -399,19 +392,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
-          if-no-files-found: ignore
+          if-no-files-found: error
           path: ${{ env.DEPLOY_FILE }}
 
       # ---------- Create canonical RUN JSON payload ----------
       - name: Build run JSON payload
         run: |
           set -e
-          # Prefer Azure blob URLs if present, else fall back to artifacts + Actions run page
           SBOM_LINK="${SBOM_URL:-}"
           TRIVY_LINK="${TRIVY_URL:-}"
           ARTIFACTS_NAME_SEC="swft-security-artifacts-${PROJECT_NAME}-${RUN_ID}"
           ARTIFACTS_NAME_DEP="aci-deploy-info-${PROJECT_NAME}-${RUN_ID}"
-
           jq -n \
             --arg id              "${RUN_ID}" \
             --arg projectName     "${PROJECT_NAME}" \
@@ -449,33 +440,22 @@ jobs:
               ref: $ref,
               commitSha: $sha,
               run: { id: $id, number: $runNumber, url: $actionsRunUrl },
-              image: {
-                registry: $acr, name: $imageName, tag: $imageTag,
-                digest: $imageDigest
-              },
+              image: { registry: $acr, name: $imageName, tag: $imageTag, digest: $imageDigest },
               artifacts: {
                 azure: ( ($sbomUrl|length)>0 or ($trivyUrl|length)>0 ) as $hasAzure
                   | if $hasAzure then { sbom: $sbomUrl, trivy: $trivyUrl } else null end,
-                github: {
-                  securityBundleName: $artifactsSec,
-                  deployInfoName: $artifactsDep,
-                  runUrl: $actionsRunUrl
-                },
+                github: { securityBundleName: $artifactsSec, deployInfoName: $artifactsDep, runUrl: $actionsRunUrl },
                 files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
               },
               assessment: {
                 cosign: { verifyStatus: $cosignStatus },
                 trivy: { severity: $sevLevels, ignoreUnfixed: $ignoreUnfix, findings: $findings }
               },
-              deployment: {
-                aci: { name: $aciName, resourceGroup: $aciRg, url: $aciUrl }
-              }
+              deployment: { aci: { name: $aciName, resourceGroup: $aciRg, url: $aciUrl } }
             }' > "${RUN_JSON_FILE}"
+          echo "Built ${RUN_JSON_FILE}"; head -n 40 "${RUN_JSON_FILE}" | jq .
 
-          echo "Built ${RUN_JSON_FILE}"
-          cat "${RUN_JSON_FILE}" | jq . | head -n 50
-
-      - name: Upload RUN JSON to Azure Storage
+      - name: Upload RUN JSON to Azure Storage (single folder)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
         uses: azure/CLI@v2
         with:
@@ -484,13 +464,13 @@ jobs:
               --account-name "${AZURE_STORAGE_ACCOUNT}" \
               --container-name "${{ inputs.storage_container_runs }}" \
               --file "${RUN_JSON_FILE}" \
-              --name "${RUN_JSON_FILE}" \
+              --name "${BLOB_PREFIX}/${RUN_JSON_FILE}" \
               --overwrite \
               --auth-mode login
-            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
+            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_runs }}" --name "${BLOB_PREFIX}/${RUN_JSON_FILE}" -o tsv)
             echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
 
-      - name: Upload RUN JSON as GitHub Artifact
+      - name: Upload RUN JSON as GitHub Artifact (single file)
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
         uses: actions/upload-artifact@v4
         with:
@@ -510,12 +490,3 @@ jobs:
             echo "- Run JSON: ${RUN_JSON_URL:-'(uploaded to Artifacts only)'}" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "- Run page (Artifacts): ${ACTIONS_RUN_URL}" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Blobs in ${{ inputs.storage_container_sboms }}:" >> "$GITHUB_STEP_SUMMARY"
-            az storage blob list --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_sboms }}" --query "[].name" -o tsv >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Blobs in ${{ inputs.storage_container_scans }}:" >> "$GITHUB_STEP_SUMMARY"
-            az storage blob list --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_scans }}" --query "[].name" -o tsv >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Blobs in ${{ inputs.storage_container_runs }}:" >> "$GITHUB_STEP_SUMMARY"
-            az storage blob list --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_runs }}" --query "[].name" -o tsv >> "$GITHUB_STEP_SUMMARY" || true
