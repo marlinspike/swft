@@ -146,20 +146,26 @@ jobs:
           echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
           chmod 644 cosign.pub
 
-      - name: Sign image (registry-only)
+      - name: Sign image (by digest, no tlog)
         run: |
           set -euo pipefail
+          REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          echo "Signing $REF"
           cosign sign \
             --key cosign.key \
             --tlog-upload=false \
-            "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+            "$REF"
 
-      - name: Verify image signature (optional gate)
+      - name: Verify image signature (by digest; ignore tlog)
         env:
           POLICY_FAIL_ON_VERIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify || 'true' }}
         run: |
           set +e
-          cosign verify --key cosign.pub "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" >/tmp/cosign.verify 2>&1
+          REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          cosign verify \
+            --key cosign.pub \
+            --insecure-ignore-tlog \
+            "$REF" >/tmp/cosign.verify 2>&1
           STATUS=$?
           set -e
           if [ $STATUS -eq 0 ]; then
@@ -169,10 +175,9 @@ jobs:
             echo "--- cosign verify output ---"
             cat /tmp/cosign.verify || true
             echo "---------------------------"
-            if [ "$POLICY_FAIL_ON_VERIFY" = "true" ]; then
-              exit 1
-            fi
+            if [ "$POLICY_FAIL_ON_VERIFY" = "true" ]; then exit 1; fi
           fi
+
 
       # === GENERATE FILES WITH OFFICIAL ACTIONS (fixed names) ===
       - name: Generate SBOM (Syft via Anchore)
