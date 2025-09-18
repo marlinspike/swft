@@ -471,9 +471,22 @@ jobs:
         with:
           inlineScript: |
             set -euo pipefail
-            cp -f "run.json" "${RUN_JSON_FILE}"
-            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --file "${RUN_JSON_FILE}" --name "${RUN_JSON_FILE}" --overwrite true --auth-mode login
-            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
+            # ensure the file exists (if not, show workspace so we see what's wrong)
+            test -s "run.json" || { echo "run.json not found. Workspace:"; pwd; ls -la; exit 2; }
+
+            # upload the file directly; flat name, not a folder
+            az storage blob upload \
+              --account-name "${AZURE_STORAGE_ACCOUNT}" \
+              --container-name "${{ steps.cfg.outputs.cn_runs }}" \
+              --file "run.json" \
+              --name "${RUN_JSON_FILE}" \
+              --overwrite true \
+              --auth-mode login
+
+            RUN_JSON_URL=$(az storage blob url \
+              --account-name "${AZURE_STORAGE_ACCOUNT}" \
+              --container-name "${{ steps.cfg.outputs.cn_runs }}" \
+              --name "${RUN_JSON_FILE}" -o tsv)
             echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
 
 
