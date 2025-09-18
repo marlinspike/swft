@@ -373,14 +373,18 @@ jobs:
           name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: aci-endpoint.txt
 
+
       # ---------- Build & upload RUN JSON ----------
       - name: Ensure jq present (for RUN JSON)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
 
-      - name: Build run JSON payload (pretty name for Azure; fixed for artifact)
+      - name: Build run JSON payload (fixed jq program)
         run: |
           set -euo pipefail
-          SBOM_LINK="${SBOM_URL:-}"; TRIVY_LINK="${TRIVY_URL:-}"
+
+          SBOM_LINK="${SBOM_URL:-}"
+          TRIVY_LINK="${TRIVY_URL:-}"
+
           jq -n \
             --arg id              "${RUN_ID}" \
             --arg projectName     "${PROJECT_NAME}" \
@@ -405,29 +409,46 @@ jobs:
             --arg aciUrl          "${ACI_URL:-}" \
             --arg cosignStatus    "${COSIGN_VERIFY_STATUS:-unknown}" \
             --arg sevLevels       "${{ steps.cfg.outputs.scan_levels }}" \
-            --argjson ignoreUnfix ${{ steps.cfg.outputs.ignore_unfixed }} \
             --arg failLevels      "${{ steps.cfg.outputs.fail_levels }}" \
-            --arg totalFindings   "${TRIVY_FINDINGS_TOTAL:-0}" \
-            --arg failFindings    "${TRIVY_FINDINGS_FAILSET:-0}" \
-            '{
-              id: $id, projectName: $projectName, createdAt: $timestamp,
-              repository: $repo, workflow: $workflow, ref: $ref, commitSha: $sha,
+            --argjson ignoreUnfix ${{ steps.cfg.outputs.ignore_unfixed }} \
+            --argjson totalFindings ${TRIVY_FINDINGS_TOTAL:-0} \
+            --argjson failFindings  ${TRIVY_FINDINGS_FAILSET:-0} \
+            '
+            def azure_links:
+              if (($sbomUrl|length) > 0 or ($trivyUrl|length) > 0)
+              then { sbom: $sbomUrl, trivy: $trivyUrl }
+              else null
+              end;
+
+            {
+              id: $id,
+              projectName: $projectName,
+              createdAt: $timestamp,
+              repository: $repo,
+              workflow: $workflow,
+              ref: $ref,
+              commitSha: $sha,
               run: { id: $id, number: $runNumber, url: $actionsRunUrl },
               image: { registry: $acr, name: $imageName, tag: $imageTag, digest: $imageDigest },
               artifacts: {
-                azure: ( ($sbomUrl|length)>0 or ($trivyUrl|length)>0 ) as $hasAzure
-                  | if $hasAzure then { sbom: $sbomUrl, trivy: $trivyUrl } else null end,
+                azure: azure_links,
                 files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
               },
               assessment: {
                 cosign: { verifyStatus: $cosignStatus },
-                trivy: { scanSeverities: $sevLevels, ignoreUnfixed: $ignoreUnfix, failSeverities: $failLevels,
-                         findings: { total: ($totalFindings|tonumber), failSet: ($failFindings|tonumber) } }
+                trivy: {
+                  scanSeverities: $sevLevels,
+                  ignoreUnfixed: $ignoreUnfix,
+                  failSeverities: $failLevels,
+                  findings: { total: $totalFindings, failSet: $failFindings }
+                }
               },
               deployment: { aci: { name: $aciName, resourceGroup: $aciRg, url: $aciUrl } }
             }' > "run.json"
+
           test -s "run.json"
           ls -l "run.json"
+
 
       - name: Upload RUN JSON to Azure Storage (pretty name)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
