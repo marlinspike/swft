@@ -201,6 +201,26 @@ jobs:
           ls -lh "${SBOM_FILE}" || true
           ls -lh "${TRIVY_FILE}" || true
 
+      - name: Normalize filenames to FILE_PREFIX
+        run: |
+          set -e
+          echo "Expected:"
+          echo "  SBOM_FILE=$SBOM_FILE"
+          echo "  TRIVY_FILE=$TRIVY_FILE"
+          echo "  SARIF_FILE=$SARIF_FILE"
+          echo "Existing files in workspace:"
+          ls -la
+
+          # If actions produced legacy names, rename them to the canonical names
+          [ -f sbom.cyclonedx.json ] && mv sbom.cyclonedx.json "$SBOM_FILE"
+          [ -f trivy-report.json ] && mv trivy-report.json "$TRIVY_FILE"
+          [ -f trivy-results.sarif ] && mv trivy-results.sarif "$SARIF_FILE"
+
+          # Final confirmation
+          echo "After normalization:"
+          ls -l "$SBOM_FILE" "$TRIVY_FILE" "$SARIF_FILE"
+
+
       - name: Enforce Trivy policy (manual runs can fail; pushes do NOT)
         env:
           POLICY_FAIL_ON_TRIVY:        ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || 'false' }}
