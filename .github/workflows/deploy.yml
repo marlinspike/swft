@@ -17,12 +17,10 @@ on:
         description: "Upload SBOM/scan/run JSON as GitHub Artifacts"
         type: boolean
         default: true
-      # Single input for all Trivy policy config (parsed below)
       trivy_config:
         description: "scan=<levels>;ignore_unfixed=<true|false>;fail=<levels>"
         type: string
         default: "scan=HIGH,CRITICAL;ignore_unfixed=true;fail=CRITICAL"
-      # Single input for all container names (parsed below)
       storage_containers:
         description: "sboms,scans,runs"
         type: string
@@ -101,10 +99,11 @@ jobs:
             echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
           } >> $GITHUB_ENV
 
-      - name: Parse inputs (Trivy + containers)
+      - name: Parse inputs (Trivy + containers + switches)
         id: cfg
         run: |
           set -euo pipefail
+          # ---- Trivy config
           TC="${{ github.event_name == 'workflow_dispatch' && inputs.trivy_config || '' }}"
           [ -z "$TC" ] && TC="scan=${TRIVY_SEVERITY};ignore_unfixed=${TRIVY_IGNORE_UNFIXED};fail=CRITICAL"
           SCAN=$(echo "$TC" | sed -n 's/.*scan=\([^;]*\).*/\1/p'); [ -z "$SCAN" ] && SCAN="${TRIVY_SEVERITY}"
@@ -114,12 +113,24 @@ jobs:
           echo "ignore_unfixed=$IGN"       >> $GITHUB_OUTPUT
           echo "fail_levels=$FAIL"         >> $GITHUB_OUTPUT
 
+          # ---- Containers
           CS="${{ github.event_name == 'workflow_dispatch' && inputs.storage_containers || '' }}"
           [ -z "$CS" ] && CS="sboms,scans,runs"
           IFS=',' read -r CN_SBOM CN_SCAN CN_RUNS <<< "$CS"
           echo "cn_sbom=${CN_SBOM:-sboms}" >> $GITHUB_OUTPUT
           echo "cn_scan=${CN_SCAN:-scans}" >> $GITHUB_OUTPUT
           echo "cn_runs=${CN_RUNS:-runs}"  >> $GITHUB_OUTPUT
+
+          # ---- Effective switches (works for push AND manual)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            AZ="${{ inputs.upload_to_azure }}"
+            AR="${{ inputs.upload_artifacts }}"
+          else
+            AZ="${{ vars.UPLOAD_TO_AZURE || 'true' }}"
+            AR="${{ vars.UPLOAD_ARTIFACTS || 'true' }}"
+          fi
+          echo "upload_to_azure=$AZ"  >> $GITHUB_OUTPUT
+          echo "upload_artifacts=$AR" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -267,9 +278,9 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
-      # ---------- Azure uploads (pretty names under one “folder” path) ----------
+      # ---------- Azure uploads (work on push and manual) ----------
       - name: Ensure Azure containers
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -278,7 +289,7 @@ jobs:
             az storage container create --name "${{ steps.cfg.outputs.cn_runs }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
 
       - name: Upload SBOM to Azure Storage
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -294,7 +305,7 @@ jobs:
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
       - name: Upload Trivy report to Azure Storage
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -309,23 +320,31 @@ jobs:
             TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${BLOB_PREFIX}/${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
-      # ---------- Upload each artifact as a single file ----------
+      - name: Upload RUN JSON to Azure Storage (pretty name)
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            # RUN JSON is created below; this step only runs if it exists
+            :
+
+      # ---------- Upload artifacts (single file per step) ----------
       - name: Upload SBOM artifact
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('sbom.cyclonedx.json') != '' }}
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('sbom.cyclonedx.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: sbom.cyclonedx.json
 
       - name: Upload Trivy JSON artifact
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('trivy-report.json') != '' }}
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('trivy-report.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: trivy-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: trivy-report.json
 
       - name: Upload Trivy SARIF artifact
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('trivy-results.sarif') != '' }}
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('trivy-results.sarif') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
@@ -367,24 +386,21 @@ jobs:
           test -s "${DEPLOY_SRC}"
 
       - name: Upload deploy endpoint artifact
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('aci-endpoint.txt') != '' }}
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('aci-endpoint.txt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: aci-endpoint.txt
 
-
-      # ---------- Build & upload RUN JSON ----------
+      # ---------- Build RUN JSON, upload to Azure, then artifact ----------
       - name: Ensure jq present (for RUN JSON)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
 
       - name: Build run JSON payload (fixed jq program)
         run: |
           set -euo pipefail
-
           SBOM_LINK="${SBOM_URL:-}"
           TRIVY_LINK="${TRIVY_URL:-}"
-
           jq -n \
             --arg id              "${RUN_ID}" \
             --arg projectName     "${PROJECT_NAME}" \
@@ -445,13 +461,10 @@ jobs:
               },
               deployment: { aci: { name: $aciName, resourceGroup: $aciRg, url: $aciUrl } }
             }' > "run.json"
-
           test -s "run.json"
-          ls -l "run.json"
-
 
       - name: Upload RUN JSON to Azure Storage (pretty name)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -463,10 +476,23 @@ jobs:
               --name "${BLOB_PREFIX}/${RUN_JSON_FILE}" \
               --overwrite \
               --auth-mode login
+            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${BLOB_PREFIX}/${RUN_JSON_FILE}" -o tsv)
+            echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
 
       - name: Upload RUN JSON artifact
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('run.json') != '' }}
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('run.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: swft-run-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: run.json
+
+      - name: Azure upload summary
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
+        run: |
+          {
+            echo "### Azure uploads"
+            echo ""
+            echo "- SBOM:  ${SBOM_URL:-'(n/a)'}"
+            echo "- Trivy: ${TRIVY_URL:-'(n/a)'}"
+            echo "- Run JSON: ${RUN_JSON_URL:-'(n/a)'}"
+          } >> "$GITHUB_STEP_SUMMARY"
