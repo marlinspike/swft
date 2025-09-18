@@ -73,7 +73,7 @@ env:
   RUN_ID:       ${{ github.run_id }}
   RUN_NUMBER:   ${{ github.run_number }}
 
-  # FIXED filenames that we will ALWAYS upload as artifacts
+  # FIXED filenames we always create & upload as artifacts
   SBOM_SRC:     sbom.cyclonedx.json
   TRIVY_SRC:    trivy-report.json
   SARIF_SRC:    trivy-results.sarif
@@ -97,7 +97,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           environment: azureCloud
 
-      - name: Derive pretty names & timestamp (for Azure + RUN JSON only)
+      - name: Derive pretty names & timestamp (for Azure + run JSON only)
         run: |
           set -euo pipefail
           FILE_PREFIX="${PROJECT_NAME}-${RUN_ID}"
@@ -196,7 +196,6 @@ jobs:
       - name: Generate Trivy JSON report
         run: |
           set -euo pipefail
-          # Scan local image (already pulled)
           trivy image --quiet --scanners vuln \
             --format json --output "${TRIVY_SRC}" \
             --ignore-unfixed="${TRIVY_IGNORE_UNFIXED}" \
@@ -287,17 +286,30 @@ jobs:
             TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_scans }}" --name "${BLOB_PREFIX}/${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
-      # ---------- Upload EXACT files as GitHub Artifacts (fixed names ONLY) ----------
-      - name: Upload security artifacts (3 fixed files)
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
+      # ---------- Upload each artifact as a single file (no multi-path) ----------
+      - name: Upload SBOM artifact
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('sbom.cyclonedx.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: swft-security-artifacts-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          name: sbom-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           if-no-files-found: error
-          path: |
-            ${{ env.SBOM_SRC }}
-            ${{ env.TRIVY_SRC }}
-            ${{ env.SARIF_SRC }}
+          path: sbom.cyclonedx.json
+
+      - name: Upload Trivy JSON artifact
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('trivy-report.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          if-no-files-found: error
+          path: trivy-report.json
+
+      - name: Upload Trivy SARIF artifact
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('trivy-results.sarif') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+        # if-no-files-found not needed; gated by hashFiles
+          path: trivy-results.sarif
 
       # ---------- Deploy to Azure Container Instances (CLI) ----------
       - name: Deploy to Azure Container Instance
@@ -332,22 +344,14 @@ jobs:
           PUBLIC_IP=$(az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --query "ipAddress.ip" -o tsv)
           echo "http://$PUBLIC_IP" > "${DEPLOY_SRC}"
           echo "ACI_URL=http://${PUBLIC_IP}" >> $GITHUB_ENV
-          {
-            echo "### Deployment"
-            echo "- ACI name: ${AZURE_CONTAINER_NAME}"
-            echo "- Resource group: ${AZURE_RESOURCE_GROUP}"
-            echo "- Image: ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}"
-            echo "- Public URL: http://${PUBLIC_IP}"
-          } >> "$GITHUB_STEP_SUMMARY"
           test -s "${DEPLOY_SRC}"
 
-      - name: Upload deployment info to GitHub Artifacts (fixed file)
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
+      - name: Upload deploy endpoint artifact
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('aci-endpoint.txt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
-          if-no-files-found: error
-          path: ${{ env.DEPLOY_SRC }}
+          path: aci-endpoint.txt
 
       # ---------- Build & upload RUN JSON ----------
       - name: Build run JSON payload (pretty name for Azure; fixed for artifact)
@@ -355,7 +359,7 @@ jobs:
           set -euo pipefail
           SBOM_LINK="${SBOM_URL:-}"
           TRIVY_LINK="${TRIVY_URL:-}"
-          ARTIFACTS_NAME_SEC="swft-security-artifacts-${PROJECT_NAME}-${RUN_ID}"
+          ARTIFACTS_NAME_SEC="sbom-${PROJECT_NAME}-${RUN_ID},trivy-json-${PROJECT_NAME}-${RUN_ID},trivy-sarif-${PROJECT_NAME}-${RUN_ID}"
           ARTIFACTS_NAME_DEP="aci-deploy-info-${PROJECT_NAME}-${RUN_ID}"
           jq -n \
             --arg id              "${RUN_ID}" \
@@ -393,7 +397,11 @@ jobs:
               artifacts: {
                 azure: ( ($sbomUrl|length)>0 or ($trivyUrl|length)>0 ) as $hasAzure
                   | if $hasAzure then { sbom: $sbomUrl, trivy: $trivyUrl } else null end,
-                github: { securityBundleName: $artifactsSec, deployInfoName: $artifactsDep, runUrl: $actionsRunUrl },
+                github: {
+                  bundles: $artifactsSec,
+                  deployInfoName: $artifactsDep,
+                  runUrl: $actionsRunUrl
+                },
                 files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
               },
               assessment: {
@@ -419,10 +427,9 @@ jobs:
               --overwrite \
               --auth-mode login
 
-      - name: Upload RUN JSON as GitHub Artifact (fixed file)
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) }}
+      - name: Upload RUN JSON artifact
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.upload_artifacts) && hashFiles('run.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: swft-run-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
-          if-no-files-found: error
-          path: ${{ env.RUNJSON_SRC }}
+          path: run.json
