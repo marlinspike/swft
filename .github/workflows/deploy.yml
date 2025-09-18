@@ -94,7 +94,6 @@ jobs:
             echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif"
             echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt"
             echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json"
-            echo "BLOB_PREFIX=${FILE_PREFIX}"
             echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
             echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
           } >> $GITHUB_ENV
@@ -276,19 +275,20 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
-          category: trivy
+        # category intentionally omitted (single SARIF)
 
-      # ---------- Azure uploads (work on push and manual) ----------
+      # ---------- Azure uploads (work on push and manual; FLAT filenames) ----------
       - name: Ensure Azure containers
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
+            set -euo pipefail
             az storage container create --name "${{ steps.cfg.outputs.cn_sbom }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
             az storage container create --name "${{ steps.cfg.outputs.cn_scan }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
             az storage container create --name "${{ steps.cfg.outputs.cn_runs }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
 
-      - name: Upload SBOM to Azure Storage
+      - name: Upload SBOM to Azure Storage (flat name)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
@@ -299,8 +299,7 @@ jobs:
             SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --name "${SBOM_FILE}" -o tsv)
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
-
-      - name: Upload Trivy report to Azure Storage
+      - name: Upload Trivy report to Azure Storage (flat name)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
@@ -311,22 +310,7 @@ jobs:
             TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
-
-
-      - name: Upload RUN JSON to Azure Storage
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-            cp -f "run.json" "${RUN_JSON_FILE}"
-            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --file "${RUN_JSON_FILE}" --name "${RUN_JSON_FILE}" --overwrite true --auth-mode login
-            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
-            echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
-
-
-
-      # ---------- Upload to Artifacts (single file per step) ----------
+      # ---------- Upload each artifact as a single file ----------
       - name: Upload SBOM artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('sbom.cyclonedx.json') != '' }}
         uses: actions/upload-artifact@v4
@@ -390,12 +374,12 @@ jobs:
           name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: aci-endpoint.txt
 
-      # ---------- Build RUN JSON, upload to Azure, then artifact ----------
+      # ---------- Build RUN JSON AFTER Azure uploads & Deploy ----------
       - name: Ensure jq present (for RUN JSON)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
 
-      # 1) Build run JSON (same jq program you already have)
       - name: Build run JSON payload (fixed jq program)
+        id: build_run_json
         run: |
           set -euo pipefail
           SBOM_LINK="${SBOM_URL:-}"
@@ -459,45 +443,27 @@ jobs:
                 }
               },
               deployment: { aci: { name: $aciName, resourceGroup: $aciRg, url: $aciUrl } }
-            }' > "run.json"
-          test -s "run.json"
-          ls -l "run.json"
+            }' > run.json
+          test -s run.json
+          ls -l run.json
 
-
-      # Upload RUN JSON to Azure (FLAT filename, no prefix)
-      - name: Upload RUN JSON to Azure Storage
+      - name: Upload RUN JSON to Azure Storage (flat name)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            # ensure the file exists (if not, show workspace so we see what's wrong)
-            test -s "run.json" || { echo "run.json not found. Workspace:"; pwd; ls -la; exit 2; }
-
-            # upload the file directly; flat name, not a folder
-            az storage blob upload \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ steps.cfg.outputs.cn_runs }}" \
-              --file "run.json" \
-              --name "${RUN_JSON_FILE}" \
-              --overwrite true \
-              --auth-mode login
-
-            RUN_JSON_URL=$(az storage blob url \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ steps.cfg.outputs.cn_runs }}" \
-              --name "${RUN_JSON_FILE}" -o tsv)
+            test -s run.json || { echo "run.json not found"; pwd; ls -la; exit 2; }
+            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --file run.json --name "${RUN_JSON_FILE}" --overwrite true --auth-mode login
+            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
             echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
 
-
-      # Upload RUN JSON artifact
       - name: Upload RUN JSON artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('run.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: swft-run-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: run.json
-
 
       - name: Azure upload summary
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
