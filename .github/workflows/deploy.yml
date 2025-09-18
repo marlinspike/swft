@@ -45,6 +45,10 @@ on:
         description: "Fail the workflow if Cosign verify fails"
         type: boolean
         default: true
+      fail_on_severities:
+        description: "Severities that trigger a FAIL (comma-separated)"
+        type: string
+        default: "CRITICAL"
 
 permissions:
   contents: read
@@ -238,21 +242,60 @@ jobs:
       - name: Ensure jq present (policy step needs it)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
 
-      - name: Enforce Trivy policy (manual runs can fail; pushes do NOT)
+
+      - name: Enforce Trivy policy (fail only on selected severities)
         env:
-          POLICY_FAIL_ON_TRIVY:        ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || (vars.FAIL_ON_TRIVY || 'false') }}
+          POLICY_FAIL_ON_TRIVY:  ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || (vars.FAIL_ON_TRIVY || 'false') }}
+          SCAN_LEVELS:           ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
+          FAIL_LEVELS:           ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_severities || 'CRITICAL' }}
         run: |
           set -euo pipefail
-          SEVERITIES="${TRIVY_SEVERITY}"
-          COUNT=$(jq --arg sev "$SEVERITIES" '
+
+          # Sanity: show what we’re gating on
+          echo "SCAN_LEVELS=$SCAN_LEVELS"
+          echo "FAIL_LEVELS=$FAIL_LEVELS"
+          echo "POLICY_FAIL_ON_TRIVY=$POLICY_FAIL_ON_TRIVY"
+
+          # Count findings in the scan (based on SCAN_LEVELS passed to Trivy)
+          TOTAL_COUNT=$(jq --arg sev "$SCAN_LEVELS" '
             [.Results[].Vulnerabilities[]? as $v
-             | ($sev | split(",")) as $levels
-             | select($levels | index($v.Severity))
+              | ($sev | split(",")) as $levels
+              | select($levels | index($v.Severity))
             ] | length' "${TRIVY_SRC}")
-          echo "TRIVY_FINDINGS=$COUNT" >> $GITHUB_ENV
-          if [ "$POLICY_FAIL_ON_TRIVY" = "true" ] && [ "$COUNT" -gt 0 ]; then
+
+          # Count only the severities that should FAIL the run
+          FAIL_COUNT=$(jq --arg sev "$FAIL_LEVELS" '
+            [.Results[].Vulnerabilities[]? as $v
+              | ($sev | split(",")) as $levels
+              | select($levels | index($v.Severity))
+            ] | length' "${TRIVY_SRC}")
+
+          # Optional: per-severity tallies (handy for the summary)
+          COUNT_CRIT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "${TRIVY_SRC}")
+          COUNT_HIGH=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH")]     | length' "${TRIVY_SRC}")
+          COUNT_MED=$(jq  '[.Results[].Vulnerabilities[]? | select(.Severity=="MEDIUM")]   | length' "${TRIVY_SRC}") || true
+          COUNT_LOW=$(jq  '[.Results[].Vulnerabilities[]? | select(.Severity=="LOW")]      | length' "${TRIVY_SRC}") || true
+
+          echo "TRIVY_FINDINGS_TOTAL=$TOTAL_COUNT" >> $GITHUB_ENV
+          echo "TRIVY_FINDINGS_FAILSET=$FAIL_COUNT" >> $GITHUB_ENV
+
+          {
+            echo "### Trivy Policy"
+            echo "- Scan severities (reported): $SCAN_LEVELS"
+            echo "- Fail severities (gated):    $FAIL_LEVELS"
+            echo "- Findings (total in scan):   $TOTAL_COUNT"
+            echo "- Findings (in fail set):     $FAIL_COUNT"
+            echo "- Breakdown: CRITICAL=$COUNT_CRIT, HIGH=$COUNT_HIGH, MEDIUM=$COUNT_MED, LOW=$COUNT_LOW"
+            echo "- Fail on Trivy:              $POLICY_FAIL_ON_TRIVY"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$POLICY_FAIL_ON_TRIVY" = "true" ] && [ "$FAIL_COUNT" -gt 0 ]; then
+            echo "Failing due to findings in fail set ($FAIL_LEVELS): $FAIL_COUNT"
             exit 1
           fi
+
+          echo "Continuing (no fail-set findings or policy disabled)."
+
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
