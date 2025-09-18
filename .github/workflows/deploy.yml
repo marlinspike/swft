@@ -17,38 +17,24 @@ on:
         description: "Upload SBOM/scan/run JSON as GitHub Artifacts"
         type: boolean
         default: true
-      storage_container_sboms:
-        description: "Azure container for SBOMs"
+      # Single input for all Trivy policy config (parsed below)
+      trivy_config:
+        description: "scan=<levels>;ignore_unfixed=<true|false>;fail=<levels>"
         type: string
-        default: "sboms"
-      storage_container_scans:
-        description: "Azure container for vulnerability scans"
+        default: "scan=HIGH,CRITICAL;ignore_unfixed=true;fail=CRITICAL"
+      # Single input for all container names (parsed below)
+      storage_containers:
+        description: "sboms,scans,runs"
         type: string
-        default: "scans"
-      storage_container_runs:
-        description: "Azure container for run JSON payloads"
-        type: string
-        default: "runs"
+        default: "sboms,scans,runs"
       fail_on_trivy:
-        description: "Fail the workflow if Trivy finds vulnerabilities (manual runs only)"
+        description: "Fail the workflow if FAIL set has findings (manual runs only)"
         type: boolean
         default: false
-      trivy_severity:
-        description: "Severities to gate on (comma-separated)"
-        type: string
-        default: "HIGH,CRITICAL"
-      trivy_ignore_unfixed:
-        description: "Ignore unfixed vulnerabilities"
-        type: boolean
-        default: true
       fail_on_cosign_verify:
         description: "Fail the workflow if Cosign verify fails"
         type: boolean
         default: true
-      fail_on_severities:
-        description: "Severities that trigger a FAIL (comma-separated)"
-        type: string
-        default: "CRITICAL"
 
 permissions:
   contents: read
@@ -68,16 +54,16 @@ env:
   AZURE_CONTAINER_NAME: swft-fastapi
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
-  # Defaults for push runs
-  TRIVY_SEVERITY:       ${{ vars.TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
-  TRIVY_IGNORE_UNFIXED: ${{ vars.TRIVY_IGNORE_UNFIXED || 'true' }}
+  # Defaults for push runs (used if no override via trivy_config)
+  TRIVY_SEVERITY:       HIGH,CRITICAL
+  TRIVY_IGNORE_UNFIXED: true
 
   # Names & IDs
   PROJECT_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.project_name || vars.PROJECT_NAME || github.event.repository.name }}
   RUN_ID:       ${{ github.run_id }}
   RUN_NUMBER:   ${{ github.run_number }}
 
-  # FIXED artifact filenames (don’t change)
+  # FIXED artifact filenames (we always create & upload these)
   SBOM_SRC:     sbom.cyclonedx.json
   TRIVY_SRC:    trivy-report.json
   SARIF_SRC:    trivy-results.sarif
@@ -99,19 +85,41 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           environment: azureCloud
 
-      - name: Derive pretty names & timestamp (for Azure + RUN JSON only)
+      - name: Derive pretty names & timestamp
         run: |
           set -euo pipefail
           FILE_PREFIX="${PROJECT_NAME}-${RUN_ID}"
-          echo "FILE_PREFIX=$FILE_PREFIX" >> $GITHUB_ENV
-          echo "SBOM_FILE=${FILE_PREFIX}-sbom.json"     >> $GITHUB_ENV
-          echo "TRIVY_FILE=${FILE_PREFIX}-trivy.json"   >> $GITHUB_ENV
-          echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif"  >> $GITHUB_ENV
-          echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt"  >> $GITHUB_ENV
-          echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json"  >> $GITHUB_ENV
-          echo "BLOB_PREFIX=${FILE_PREFIX}"             >> $GITHUB_ENV
-          echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" >> $GITHUB_ENV
-          date -u +%FT%TZ | xargs -I{} echo "RUN_TIMESTAMP={}" >> $GITHUB_ENV
+          {
+            echo "FILE_PREFIX=$FILE_PREFIX"
+            echo "SBOM_FILE=${FILE_PREFIX}-sbom.json"
+            echo "TRIVY_FILE=${FILE_PREFIX}-trivy.json"
+            echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif"
+            echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt"
+            echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json"
+            echo "BLOB_PREFIX=${FILE_PREFIX}"
+            echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
+            echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
+          } >> $GITHUB_ENV
+
+      - name: Parse inputs (Trivy + containers)
+        id: cfg
+        run: |
+          set -euo pipefail
+          TC="${{ github.event_name == 'workflow_dispatch' && inputs.trivy_config || '' }}"
+          [ -z "$TC" ] && TC="scan=${TRIVY_SEVERITY};ignore_unfixed=${TRIVY_IGNORE_UNFIXED};fail=CRITICAL"
+          SCAN=$(echo "$TC" | sed -n 's/.*scan=\([^;]*\).*/\1/p'); [ -z "$SCAN" ] && SCAN="${TRIVY_SEVERITY}"
+          IGN=$(echo "$TC"  | sed -n 's/.*ignore_unfixed=\([^;]*\).*/\1/p'); [ -z "$IGN" ] && IGN="${TRIVY_IGNORE_UNFIXED}"
+          FAIL=$(echo "$TC" | sed -n 's/.*fail=\([^;]*\).*/\1/p'); [ -z "$FAIL" ] && FAIL="CRITICAL"
+          echo "scan_levels=$SCAN"         >> $GITHUB_OUTPUT
+          echo "ignore_unfixed=$IGN"       >> $GITHUB_OUTPUT
+          echo "fail_levels=$FAIL"         >> $GITHUB_OUTPUT
+
+          CS="${{ github.event_name == 'workflow_dispatch' && inputs.storage_containers || '' }}"
+          [ -z "$CS" ] && CS="sboms,scans,runs"
+          IFS=',' read -r CN_SBOM CN_SCAN CN_RUNS <<< "$CS"
+          echo "cn_sbom=${CN_SBOM:-sboms}" >> $GITHUB_OUTPUT
+          echo "cn_scan=${CN_SCAN:-scans}" >> $GITHUB_OUTPUT
+          echo "cn_runs=${CN_RUNS:-runs}"  >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -154,11 +162,7 @@ jobs:
         run: |
           set -euo pipefail
           REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
-          echo "Signing $REF"
-          cosign sign \
-            --key cosign.key \
-            --tlog-upload=false \
-            "$REF"
+          cosign sign --key cosign.key --tlog-upload=false "$REF"
 
       - name: Verify image signature (by digest; ignore tlog)
         env:
@@ -166,22 +170,16 @@ jobs:
         run: |
           set +e
           REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
-          cosign verify \
-            --key cosign.pub \
-            --insecure-ignore-tlog \
-            "$REF" >/tmp/cosign.verify 2>&1
+          cosign verify --key cosign.pub --insecure-ignore-tlog "$REF" >/tmp/cosign.verify 2>&1
           STATUS=$?
           set -e
           if [ $STATUS -eq 0 ]; then
             echo "COSIGN_VERIFY_STATUS=passed" >> $GITHUB_ENV
           else
             echo "COSIGN_VERIFY_STATUS=failed" >> $GITHUB_ENV
-            echo "--- cosign verify output ---"
-            cat /tmp/cosign.verify || true
-            echo "---------------------------"
+            echo "--- cosign verify output ---"; cat /tmp/cosign.verify || true; echo "---------------------------"
             if [ "$POLICY_FAIL_ON_VERIFY" = "true" ]; then exit 1; fi
           fi
-
 
       # === GENERATE FILES WITH OFFICIAL ACTIONS (fixed names) ===
       - name: Generate SBOM (Syft via Anchore)
@@ -189,14 +187,13 @@ jobs:
         with:
           image:        ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format:       cyclonedx-json
-          output-file:  ${{ env.SBOM_SRC }}
+          output-file:  sbom.cyclonedx.json
           upload-artifact: false
 
       - name: Verify SBOM exists
         run: |
           set -euo pipefail
-          ls -l || true
-          test -s "${SBOM_SRC}" || { echo "SBOM not created: ${SBOM_SRC}"; exit 2; }
+          test -s "sbom.cyclonedx.json" || { echo "SBOM not created"; ls -la; exit 2; }
 
       - name: Run Trivy vulnerability scanner (JSON)
         uses: aquasecurity/trivy-action@0.33.1
@@ -208,17 +205,16 @@ jobs:
           scan-type: 'image'
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'json'
-          output: ${{ env.TRIVY_SRC }}
-          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
-          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
+          output: trivy-report.json
+          severity: ${{ steps.cfg.outputs.scan_levels }}
+          ignore-unfixed: ${{ steps.cfg.outputs.ignore_unfixed }}
           scanners: 'vuln'
           exit-code: '0'
 
       - name: Verify Trivy JSON exists
         run: |
           set -euo pipefail
-          ls -l || true
-          test -s "${TRIVY_SRC}" || { echo "Trivy JSON not created: ${TRIVY_SRC}"; exit 2; }
+          test -s "trivy-report.json" || { echo "Trivy JSON not created"; ls -la; exit 2; }
 
       - name: Generate Trivy SARIF
         uses: aquasecurity/trivy-action@0.33.1
@@ -227,80 +223,48 @@ jobs:
           scan-type: 'image'
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'sarif'
-          output: ${{ env.SARIF_SRC }}
-          severity: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
-          ignore-unfixed: ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_ignore_unfixed || env.TRIVY_IGNORE_UNFIXED }}
+          output: trivy-results.sarif
+          severity: ${{ steps.cfg.outputs.scan_levels }}
+          ignore-unfixed: ${{ steps.cfg.outputs.ignore_unfixed }}
           scanners: 'vuln'
           exit-code: '0'
 
       - name: Verify Trivy SARIF exists
         run: |
           set -euo pipefail
-          ls -l || true
-          test -s "${SARIF_SRC}" || { echo "Trivy SARIF not created: ${SARIF_SRC}"; exit 2; }
+          test -s "trivy-results.sarif" || { echo "Trivy SARIF not created"; ls -la; exit 2; }
 
-      - name: Ensure jq present (policy step needs it)
+      - name: Ensure jq present (for policy)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
-
 
       - name: Enforce Trivy policy (fail only on selected severities)
         env:
           POLICY_FAIL_ON_TRIVY:  ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_trivy || (vars.FAIL_ON_TRIVY || 'false') }}
-          SCAN_LEVELS:           ${{ github.event_name == 'workflow_dispatch' && inputs.trivy_severity || env.TRIVY_SEVERITY }}
-          FAIL_LEVELS:           ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_severities || 'CRITICAL' }}
+          SCAN_LEVELS:           ${{ steps.cfg.outputs.scan_levels }}
+          FAIL_LEVELS:           ${{ steps.cfg.outputs.fail_levels }}
         run: |
           set -euo pipefail
-
-          # Sanity: show what we’re gating on
-          echo "SCAN_LEVELS=$SCAN_LEVELS"
-          echo "FAIL_LEVELS=$FAIL_LEVELS"
-          echo "POLICY_FAIL_ON_TRIVY=$POLICY_FAIL_ON_TRIVY"
-
-          # Count findings in the scan (based on SCAN_LEVELS passed to Trivy)
           TOTAL_COUNT=$(jq --arg sev "$SCAN_LEVELS" '
-            [.Results[].Vulnerabilities[]? as $v
+            [ .Results[].Vulnerabilities[]? as $v
               | ($sev | split(",")) as $levels
               | select($levels | index($v.Severity))
-            ] | length' "${TRIVY_SRC}")
-
-          # Count only the severities that should FAIL the run
+            ] | length' "trivy-report.json")
           FAIL_COUNT=$(jq --arg sev "$FAIL_LEVELS" '
-            [.Results[].Vulnerabilities[]? as $v
+            [ .Results[].Vulnerabilities[]? as $v
               | ($sev | split(",")) as $levels
               | select($levels | index($v.Severity))
-            ] | length' "${TRIVY_SRC}")
-
-          # Optional: per-severity tallies (handy for the summary)
-          COUNT_CRIT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "${TRIVY_SRC}")
-          COUNT_HIGH=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH")]     | length' "${TRIVY_SRC}")
-          COUNT_MED=$(jq  '[.Results[].Vulnerabilities[]? | select(.Severity=="MEDIUM")]   | length' "${TRIVY_SRC}") || true
-          COUNT_LOW=$(jq  '[.Results[].Vulnerabilities[]? | select(.Severity=="LOW")]      | length' "${TRIVY_SRC}") || true
-
+            ] | length' "trivy-report.json")
           echo "TRIVY_FINDINGS_TOTAL=$TOTAL_COUNT" >> $GITHUB_ENV
           echo "TRIVY_FINDINGS_FAILSET=$FAIL_COUNT" >> $GITHUB_ENV
-
-          {
-            echo "### Trivy Policy"
-            echo "- Scan severities (reported): $SCAN_LEVELS"
-            echo "- Fail severities (gated):    $FAIL_LEVELS"
-            echo "- Findings (total in scan):   $TOTAL_COUNT"
-            echo "- Findings (in fail set):     $FAIL_COUNT"
-            echo "- Breakdown: CRITICAL=$COUNT_CRIT, HIGH=$COUNT_HIGH, MEDIUM=$COUNT_MED, LOW=$COUNT_LOW"
-            echo "- Fail on Trivy:              $POLICY_FAIL_ON_TRIVY"
-          } >> "$GITHUB_STEP_SUMMARY"
-
           if [ "$POLICY_FAIL_ON_TRIVY" = "true" ] && [ "$FAIL_COUNT" -gt 0 ]; then
             echo "Failing due to findings in fail set ($FAIL_LEVELS): $FAIL_COUNT"
             exit 1
           fi
 
-          echo "Continuing (no fail-set findings or policy disabled)."
-
-
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ${{ env.SARIF_SRC }}
+          sarif_file: trivy-results.sarif
           category: trivy
 
       # ---------- Azure uploads (pretty names under one “folder” path) ----------
@@ -309,24 +273,24 @@ jobs:
         uses: azure/CLI@v2
         with:
           inlineScript: |
-            az storage container create --name "${{ inputs.storage_container_sboms }}"  --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
-            az storage container create --name "${{ inputs.storage_container_scans }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
-            az storage container create --name "${{ inputs.storage_container_runs }}"  --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
+            az storage container create --name "${{ steps.cfg.outputs.cn_sbom }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
+            az storage container create --name "${{ steps.cfg.outputs.cn_scan }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
+            az storage container create --name "${{ steps.cfg.outputs.cn_runs }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
 
       - name: Upload SBOM to Azure Storage
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
-            cp -f "${SBOM_SRC}" "${SBOM_FILE}"
+            cp -f "sbom.cyclonedx.json" "${SBOM_FILE}"
             az storage blob upload \
               --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ inputs.storage_container_sboms }}" \
+              --container-name "${{ steps.cfg.outputs.cn_sbom }}" \
               --file "${SBOM_FILE}" \
               --name "${BLOB_PREFIX}/${SBOM_FILE}" \
               --overwrite \
               --auth-mode login
-            SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_sboms }}" --name "${BLOB_PREFIX}/${SBOM_FILE}" -o tsv)
+            SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --name "${BLOB_PREFIX}/${SBOM_FILE}" -o tsv)
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
       - name: Upload Trivy report to Azure Storage
@@ -334,15 +298,15 @@ jobs:
         uses: azure/CLI@v2
         with:
           inlineScript: |
-            cp -f "${TRIVY_SRC}" "${TRIVY_FILE}"
+            cp -f "trivy-report.json" "${TRIVY_FILE}"
             az storage blob upload \
               --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ inputs.storage_container_scans }}" \
+              --container-name "${{ steps.cfg.outputs.cn_scan }}" \
               --file "${TRIVY_FILE}" \
               --name "${BLOB_PREFIX}/${TRIVY_FILE}" \
               --overwrite \
               --auth-mode login
-            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ inputs.storage_container_scans }}" --name "${BLOB_PREFIX}/${TRIVY_FILE}" -o tsv)
+            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${BLOB_PREFIX}/${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
       # ---------- Upload each artifact as a single file ----------
@@ -416,8 +380,7 @@ jobs:
       - name: Build run JSON payload (pretty name for Azure; fixed for artifact)
         run: |
           set -euo pipefail
-          SBOM_LINK="${SBOM_URL:-}"
-          TRIVY_LINK="${TRIVY_URL:-}"
+          SBOM_LINK="${SBOM_URL:-}"; TRIVY_LINK="${TRIVY_URL:-}"
           jq -n \
             --arg id              "${RUN_ID}" \
             --arg projectName     "${PROJECT_NAME}" \
@@ -441,9 +404,11 @@ jobs:
             --arg aciRg           "${AZURE_RESOURCE_GROUP}" \
             --arg aciUrl          "${ACI_URL:-}" \
             --arg cosignStatus    "${COSIGN_VERIFY_STATUS:-unknown}" \
-            --arg sevLevels       "${TRIVY_SEVERITY}" \
-            --argjson ignoreUnfix ${TRIVY_IGNORE_UNFIXED} \
-            --argjson findings    ${TRIVY_FINDINGS:-0} \
+            --arg sevLevels       "${{ steps.cfg.outputs.scan_levels }}" \
+            --argjson ignoreUnfix ${{ steps.cfg.outputs.ignore_unfixed }} \
+            --arg failLevels      "${{ steps.cfg.outputs.fail_levels }}" \
+            --arg totalFindings   "${TRIVY_FINDINGS_TOTAL:-0}" \
+            --arg failFindings    "${TRIVY_FINDINGS_FAILSET:-0}" \
             '{
               id: $id, projectName: $projectName, createdAt: $timestamp,
               repository: $repo, workflow: $workflow, ref: $ref, commitSha: $sha,
@@ -456,22 +421,23 @@ jobs:
               },
               assessment: {
                 cosign: { verifyStatus: $cosignStatus },
-                trivy: { severity: $sevLevels, ignoreUnfixed: $ignoreUnfix, findings: $findings }
+                trivy: { scanSeverities: $sevLevels, ignoreUnfixed: $ignoreUnfix, failSeverities: $failLevels,
+                         findings: { total: ($totalFindings|tonumber), failSet: ($failFindings|tonumber) } }
               },
               deployment: { aci: { name: $aciName, resourceGroup: $aciRg, url: $aciUrl } }
-            }' > "${RUNJSON_SRC}"
-          test -s "${RUNJSON_SRC}"
-          ls -l "${RUNJSON_SRC}"
+            }' > "run.json"
+          test -s "run.json"
+          ls -l "run.json"
 
       - name: Upload RUN JSON to Azure Storage (pretty name)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_azure }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
-            cp -f "${RUNJSON_SRC}" "${RUN_JSON_FILE}"
+            cp -f "run.json" "${RUN_JSON_FILE}"
             az storage blob upload \
               --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ inputs.storage_container_runs }}" \
+              --container-name "${{ steps.cfg.outputs.cn_runs }}" \
               --file "${RUN_JSON_FILE}" \
               --name "${BLOB_PREFIX}/${RUN_JSON_FILE}" \
               --overwrite \
