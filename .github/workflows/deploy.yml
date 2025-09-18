@@ -293,49 +293,37 @@ jobs:
         uses: azure/CLI@v2
         with:
           inlineScript: |
+            set -euo pipefail
             cp -f "sbom.cyclonedx.json" "${SBOM_FILE}"
-            az storage blob upload \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ steps.cfg.outputs.cn_sbom }}" \
-              --file "${SBOM_FILE}" \
-              --name "${SBOM_FILE}" \   # <— remove BLOB_PREFIX/
-              --overwrite \
-              --auth-mode login
+            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --file "${SBOM_FILE}" --name "${SBOM_FILE}" --overwrite true --auth-mode login
             SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --name "${SBOM_FILE}" -o tsv)
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
+
 
       - name: Upload Trivy report to Azure Storage
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
+            set -euo pipefail
             cp -f "trivy-report.json" "${TRIVY_FILE}"
-            az storage blob upload \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ steps.cfg.outputs.cn_scan }}" \
-              --file "${TRIVY_FILE}" \
-              --name "${TRIVY_FILE}" \   # <— remove BLOB_PREFIX/
-              --overwrite \
-              --auth-mode login
+            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --file "${TRIVY_FILE}" --name "${TRIVY_FILE}" --overwrite true --auth-mode login
             TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
 
-      - name: Upload RUN JSON to Azure Storage (pretty name)
+
+      - name: Upload RUN JSON to Azure Storage
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
+            set -euo pipefail
             cp -f "run.json" "${RUN_JSON_FILE}"
-            az storage blob upload \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --container-name "${{ steps.cfg.outputs.cn_runs }}" \
-              --file "${RUN_JSON_FILE}" \
-              --name "${RUN_JSON_FILE}" \   # <— remove BLOB_PREFIX/
-              --overwrite \
-              --auth-mode login
+            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --file "${RUN_JSON_FILE}" --name "${RUN_JSON_FILE}" --overwrite true --auth-mode login
             RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
             echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
+
 
 
       # ---------- Upload to Artifacts (single file per step) ----------
