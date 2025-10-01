@@ -1,19 +1,34 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
+
+# Builder stage: install build tooling and create wheels for all deps
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     gcc \
-    && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# Install pip if needed
-RUN python -m ensurepip --upgrade
+COPY requirements.txt ./
+RUN python -m ensurepip --upgrade \
+  && pip install --no-cache-dir --upgrade pip setuptools wheel \
+  && pip wheel --no-cache-dir -r requirements.txt -w /wheels
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+FROM python:3.11-slim AS runtime
+
+# Runtime stage: copy wheels only and install with no cache
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY --from=builder /wheels /wheels
+RUN python -m ensurepip --upgrade \
+  && pip install --no-cache-dir --upgrade pip \
+  && pip install --no-cache-dir /wheels/* \
+  && rm -rf /wheels
 
 # Copy application code
 COPY app/ app/
