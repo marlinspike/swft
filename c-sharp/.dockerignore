@@ -1,0 +1,7 @@
+.git
+.gitignore
+**/bin
+**/obj
+**/*.md
+**/*.log
+**/.DS_Store
