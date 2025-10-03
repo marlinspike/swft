@@ -1,22 +1,27 @@
-FROM python:3.11-slim AS builder
+# -------- 1) Builder stage (Alpine) --------
+FROM python:3.11-alpine AS builder
 
-# Builder stage: install build tooling and create wheels for all deps
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+# Build deps for compiling Python wheels on Alpine (musl)
+
+RUN apk add --no-cache \
+    build-base \
     gcc \
-  && rm -rf /var/lib/apt/lists/*
+    musl-dev \
+    libffi-dev \
+    openssl-dev
 
-COPY requirements.txt ./
-RUN python -m ensurepip --upgrade \
-  && pip install --no-cache-dir --upgrade pip setuptools wheel \
-  && pip wheel --no-cache-dir -r requirements.txt -w /wheels
+# Prebuild wheels for all requirements
+COPY requirements.txt .
+RUN python -m pip install --upgrade pip setuptools wheel \
+ && pip wheel --no-cache-dir -r requirements.txt -w /wheels
 
-FROM python:3.11-slim AS runtime
+# -------- 2) Runtime stage (Alpine) --------
+FROM python:3.11-alpine AS runtime
 
 # Runtime stage: copy wheels only and install with no cache
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,11 +29,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Runtime libs only (no compilers)
+RUN apk add --no-cache \
+    libstdc++ \
+    libffi \
+    openssl \
+    tzdata
+
 COPY --from=builder /wheels /wheels
-RUN python -m ensurepip --upgrade \
-  && pip install --no-cache-dir --upgrade pip \
-  && pip install --no-cache-dir /wheels/* \
-  && rm -rf /wheels
+COPY requirements.txt .
+RUN python -m pip install --upgrade pip \
+ && pip install --no-index --find-links=/wheels -r requirements.txt \
+ && rm -rf /wheels
 
 # Copy application code
 COPY app/ app/

@@ -43,7 +43,7 @@ docker ps
 docker logs <container-id>
 ```
 
-## 🧪 Test Endpoints
+## Test Endpoints
 
 ```bash
 # Health check
@@ -53,7 +53,7 @@ curl http://localhost:8080
 Invoke-WebRequest http://localhost:8080
 ```
 
-## 🛠️ Development
+## Dev
 
 ```bash
 # Build and run in one command
@@ -66,7 +66,7 @@ docker run --rm -it swft:latest /bin/bash
 docker history swft:latest
 ```
 
-## 🧹 Cleanup
+## Cleanup
 
 ```bash
 # Stop all containers
@@ -79,14 +79,14 @@ docker rmi swft:latest swft:builder
 docker system prune -a
 ```
 
-## 📝 Files Created
+## Files Created
 
 - `Dockerfile` - Multi-stage build definition
 - `test-docker-build.ps1` - Automated test script
 - `DOCKER.md` - Full documentation
 - `.dockerignore` - Build exclusions
 
-## ✅ What Was Accomplished
+## What Was Accomplished
 
 1. ✅ Converted single-stage to multi-stage Dockerfile
 2. ✅ Reduced image size by 64.3% (419MB saved)
@@ -95,10 +95,11 @@ docker system prune -a
 5. ✅ Verified container runs and serves HTTP
 6. ✅ Documented entire process
 
-## 🎯 Next Steps
+## Next Steps
 
-- [ ] Push to container registry (Docker Hub, ACR, ECR)
+- [ ] Push to container registry (ACR)
 - [ ] Set up CI/CD pipeline
-- [ ] Add health checks
+- [ ] Sign the container
+- [ ] Scan using tools
 - [ ] Configure production environment variables
 - [ ] Set up monitoring and logging
