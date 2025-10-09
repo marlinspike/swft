@@ -34,7 +34,7 @@ on:
       fail_on_trivy:
         description: 'Fail the workflow if FAIL set has findings (manual runs only)'
         type: boolean
-        default: false
+  default: true
       fail_on_cosign_verify:
         description: 'Fail the workflow if Cosign verify fails'
         type: boolean
@@ -46,7 +46,7 @@ on:
       deploy_to_aci:
         description: 'Deploy to Azure Container Instances at the end'
         type: boolean
-        default: false
+  default: true
       trivy_severity:
         description: 'Trivy severity filter'
         type: string
@@ -55,6 +55,14 @@ on:
         description: 'Ignore unfixed CVEs'
         type: boolean
         default: true
+      sonar_enable:
+        description: 'Run SonarQube (code quality) analysis before image build'
+        type: boolean
+  default: true
+      sonar_project_key:
+        description: 'SonarQube project key (required if sonar enabled)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -98,6 +106,8 @@ env:
   TRIVY_SARIF: trivy-results.sarif
   RUN_JSON:    run.json
   DEPLOY_INFO: aci-endpoint.txt
+  # Sonar (expect secrets SONAR_HOST_URL, SONAR_TOKEN)
+  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
 jobs:
   build-and-secure:
@@ -111,6 +121,46 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ env.AZURE_CREDENTIALS }}
+
+      - name: SonarQube Prepare (optional)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sonar_enable || false }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+          SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SONAR_TOKEN}" ] || [ -z "${SONAR_HOST_URL}" ]; then
+            echo "Sonar enabled but SONAR_HOST_URL or SONAR_TOKEN not set" >&2; exit 1
+          fi
+            if [ -z "${SONAR_PROJECT_KEY}" ]; then
+            echo "Sonar enabled but sonar_project_key input missing" >&2; exit 1
+          fi
+          echo "Installing SonarScanner for .NET (global tool)"
+          dotnet tool install --global dotnet-sonarscanner --version 6.*
+          export PATH="/github/home/.dotnet/tools:$PATH"
+          echo "SonarQube begin for project key ${SONAR_PROJECT_KEY}"
+          dotnet sonarscanner begin \
+            /k:"${SONAR_PROJECT_KEY}" \
+            /d:sonar.host.url="${SONAR_HOST_URL}" \
+            /d:sonar.login="${SONAR_TOKEN}" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
+            /d:sonar.scanner.skipJreProvisioning=true || { echo 'Sonar begin failed'; exit 2; }
+
+      - name: SonarQube Analyze (optional)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sonar_enable || false }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key }}
+        run: |
+          set -euo pipefail
+          echo "Restoring & building for Sonar analysis (project key: ${SONAR_PROJECT_KEY})"
+          dotnet restore ./c-sharp/src/HelloWorld/HelloWorld.csproj --nologo
+          dotnet build   ./c-sharp/src/HelloWorld/HelloWorld.csproj -c Release --no-restore --nologo
+          # (Optional) test + coverage placeholder – no tests in repo currently
+          echo "Completing SonarQube analysis"
+          dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || { echo 'Sonar end failed'; exit 3; }
+          echo "SonarQube analysis completed"
 
       - name: Derive pretty names & timestamp
         run: |
