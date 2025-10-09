@@ -34,7 +34,7 @@ on:
       fail_on_trivy:
         description: 'Fail the workflow if FAIL set has findings (manual runs only)'
         type: boolean
-  default: true
+        default: true
       fail_on_cosign_verify:
         description: 'Fail the workflow if Cosign verify fails'
         type: boolean
@@ -46,7 +46,7 @@ on:
       deploy_to_aci:
         description: 'Deploy to Azure Container Instances at the end'
         type: boolean
-  default: true
+        default: true
       trivy_severity:
         description: 'Trivy severity filter'
         type: string
@@ -58,7 +58,7 @@ on:
       sonar_enable:
         description: 'Run SonarQube (code quality) analysis before image build'
         type: boolean
-  default: true
+        default: true
       sonar_project_key:
         description: 'SonarQube project key (required if sonar enabled)'
         type: string
@@ -103,8 +103,7 @@ env:
   # Filenames (fixed local names)
   SBOM_SRC:    sbom.cyclonedx.json
   TRIVY_JSON:  trivy-report.json
-  TRIVY_SARIF: trivy-results.sarif
-  RUN_JSON:    run.json
+  # Removed SARIF & run.json (simplified per request)
   DEPLOY_INFO: aci-endpoint.txt
   # Sonar (expect secrets SONAR_HOST_URL, SONAR_TOKEN)
   SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -184,10 +183,7 @@ jobs:
             echo "IMAGE_TAG=$TAG_COMPOSED"
             echo "FILE_PREFIX=$FILE_PREFIX"
             echo "SBOM_FILE=${FILE_PREFIX}-sbom.json"
-            echo "TRIVY_FILE=${FILE_PREFIX}-trivy.json"
-            echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif"
             echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt"
-            echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json"
             echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
             echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
           } >> $GITHUB_ENV
@@ -306,23 +302,6 @@ jobs:
           scanners: 'vuln'
           exit-code: '0'
 
-      - name: Run Trivy (SARIF)
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          version: 'v0.66.0'
-          scan-type: 'image'
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format: 'sarif'
-          output: ${{ env.TRIVY_SARIF }}
-          severity: ${{ steps.cfg.outputs.scan_levels }}
-          ignore-unfixed: ${{ steps.cfg.outputs.ignore_unfixed }}
-          scanners: 'vuln'
-          exit-code: '0'
-
-      - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: ${{ env.TRIVY_SARIF }}
 
       - name: Ensure jq present (for policy)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
@@ -374,86 +353,15 @@ jobs:
             SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --name "${SBOM_FILE}" -o tsv)
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
-      - name: Upload Trivy JSON to Azure Storage
+      - name: Upload Trivy JSON to Azure Storage (no rename)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            cp -f "${TRIVY_JSON}" "${TRIVY_FILE}"
-            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --file "${TRIVY_FILE}" --name "${TRIVY_FILE}" --overwrite true --auth-mode login
-            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${TRIVY_FILE}" -o tsv)
+            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --file "${TRIVY_JSON}" --name "${TRIVY_JSON}" --overwrite true --auth-mode login
+            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${TRIVY_JSON}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
-
-      - name: Build run JSON payload (fixed jq program)
-        run: |
-          set -euo pipefail
-          SBOM_LINK="${SBOM_URL:-}"
-          TRIVY_LINK="${TRIVY_URL:-}"
-          jq -n \
-            --arg id              "${RUN_ID}" \
-            --arg projectName     "${PROJECT_NAME}" \
-            --arg runNumber       "${{ github.run_number }}" \
-            --arg repo            "${{ github.repository }}" \
-            --arg workflow        "${{ github.workflow }}" \
-            --arg ref             "${{ github.ref }}" \
-            --arg sha             "${{ github.sha }}" \
-            --arg timestamp       "${RUN_TIMESTAMP}" \
-            --arg actionsRunUrl   "${ACTIONS_RUN_URL}" \
-            --arg acr             "${ACR_LOGIN_SERVER}" \
-            --arg imageName       "${IMAGE_NAME}" \
-            --arg imageTag        "${IMAGE_TAG}" \
-            --arg imageDigest     "${IMAGE_DIGEST:-}" \
-            --arg sbomFile        "${SBOM_FILE}" \
-            --arg trivyFile       "${TRIVY_FILE}" \
-            --arg sarifFile       "${SARIF_FILE}" \
-            --arg sbomUrl         "${SBOM_LINK}" \
-            --arg trivyUrl        "${TRIVY_LINK}" \
-            --arg sevLevels       "${{ steps.cfg.outputs.scan_levels }}" \
-            --arg failLevels      "${{ steps.cfg.outputs.fail_levels }}" \
-            --argjson ignoreUnfix ${{ steps.cfg.outputs.ignore_unfixed }} \
-            --argjson totalFindings ${TRIVY_FINDINGS_TOTAL:-0} \
-            --argjson failFindings  ${TRIVY_FINDINGS_FAILSET:-0} \
-            '
-            def azure_links:
-              if (($sbomUrl|length) > 0 or ($trivyUrl|length) > 0)
-              then { sbom: $sbomUrl, trivy: $trivyUrl }
-              else null
-              end;
-
-            {
-              id: $id,
-              projectName: $projectName,
-              createdAt: $timestamp,
-              repository: $repo,
-              workflow: $workflow,
-              ref: $ref,
-              commitSha: $sha,
-              run: { id: $id, number: $runNumber, url: $actionsRunUrl },
-              image: { registry: $acr, name: $imageName, tag: $imageTag, digest: $imageDigest },
-              artifacts: {
-                azure: azure_links,
-                files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
-              },
-              assessment: {
-                trivy: {
-                  scanSeverities: $sevLevels,
-                  ignoreUnfixed: $ignoreUnfix,
-                  failSeverities: $failLevels,
-                  findings: { total: $totalFindings, failSet: $failFindings }
-                }
-              }
-            }' > "$RUN_JSON"
-          test -s "$RUN_JSON"
-
-  - name: Upload RUN JSON to Azure Storage (flat name)
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-    test -s "$RUN_JSON" || { echo "run.json not found"; pwd; ls -la; exit 2; }
-    az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --file "${RUN_JSON}" --name "${RUN_JSON_FILE}" --overwrite true --auth-mode login
 
       - name: Upload artifacts
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' }}
@@ -463,8 +371,6 @@ jobs:
           path: |
             ${{ env.SBOM_SRC }}
             ${{ env.TRIVY_JSON }}
-            ${{ env.TRIVY_SARIF }}
-            ${{ env.RUN_JSON }}
 
       - name: Stub DoD SWFT submission
         run: |
