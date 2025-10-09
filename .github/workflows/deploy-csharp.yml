@@ -48,14 +48,13 @@ env:
   ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
   ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
 
-  # Image identity (IMAGE_TAG derived in a step; ARCH kept simple but can be matrixed later)
   IMAGE_NAME:           csharp-hello
   ARCH:                 amd64
 
   # Azure targets (adjust container name to distinguish from FastAPI deployment)
-  AZURE_RESOURCE_GROUP: demo-swft-cicd
+  AZURE_RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP_NAME }}
   AZURE_CONTAINER_NAME: swft-csharp
-  AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_ACCOUNT: ${{ vars.STORAGE_ACCOUNT }}
 
   # Defaults for push runs (used if no override via trivy_config)
   TRIVY_SEVERITY:       HIGH,CRITICAL
