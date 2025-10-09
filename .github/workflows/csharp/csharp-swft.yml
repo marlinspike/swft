@@ -85,6 +85,13 @@ jobs:
             -Dsonar.cs.opencover.reportsPaths=**/coverage*.opencover.xml
             -Dsonar.sourceEncoding=UTF-8
 
+      - name: SonarQube Quality Gate # Pipeline quality check
+        uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
       - name: Upload coverage artifact (optional)
         if: always()
         uses: actions/upload-artifact@v4
@@ -116,6 +123,31 @@ jobs:
             --push \
             "$BUILD_CONTEXT"
 
+      # --- COSIGN SIGNING & VERIFICATION (Commented placeholders) ---
+      # To enable keyless signing (Sigstore Cosign) using OIDC (GitHub Actions issuer), uncomment the steps below.
+      # Prerequisites:
+      #   permissions: id-token: write (already set) and contents: read
+      #   No private key required (keyless). Cosign will issue an ephemeral cert bound to workflow identity.
+      # Optional: set COSIGN_YES=1 to auto-confirm.
+      # References:
+      #   https://docs.sigstore.dev/cosign/keyless/
+      #   https://github.com/sigstore/cosign
+
+      # - name: Install Cosign
+      #   uses: sigstore/cosign-installer@v3.4.0
+      #   with:
+      #     cosign-release: 'v2.2.4'
+
+      # - name: Keyless sign image with Cosign # Pipeline supply chain enhancement
+      #   env:
+      #     COSIGN_EXPERIMENTAL: 1
+      #     COSIGN_YES: 1
+      #   run: |
+      #     echo "Signing image (keyless): $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+      #     cosign sign $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+      #       --annotations repo=$REPO_NAME commit=${GITHUB_SHA} arch=$ARCH build_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      # --------------------------------------------------------------
+
 
       - name: Generate SBOM (Syft via Anchore Action)
         uses: anchore/sbom-action@v0.20.1
@@ -125,17 +157,18 @@ jobs:
           output-file: sbom.cyclonedx.json
           upload-artifact: false
 
-      - name: CVE Scan (Trivy) and save report
+      - name: CVE Scan (Trivy) and enforce severity gate # Pipeline quality check
         run: |
           trivy image \
             --format json \
             --output trivy-report.json \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+            --exit-code 1 \
+            "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" || {
+              echo "High/Critical vulnerabilities detected. See trivy-report.json"; exit 1; }
 
       
-
       - name: Stub: Upload SBOM to DoD SWFT REST API
         run: |
           echo "🟡 STUB: Would POST SBOM to DoD SWFT API"
@@ -143,6 +176,15 @@ jobs:
           echo "Auth: Bearer ${{ secrets.DO_D_SWFT_API_TOKEN || '***missing-secret***' }}"
           echo "Payload: { image: '$IMAGE_NAME', tag: '$IMAGE_TAG' }"
 
+
+
       - name: Completed
         run: echo "✅ Build & security analysis (local) steps completed successfully. Not deploying artifacts to ACI or Storage Account yet"
  
+      # - name: Verify image signature (Cosign keyless) # Pipeline quality check
+      #   run: |
+      #     echo "Verifying signature for: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+      #     cosign verify $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+      #       --certificate-identity-regexp "https://github.com/${{ github.repository }}.*" \
+      #       --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      #     echo "Signature verification succeeded."
