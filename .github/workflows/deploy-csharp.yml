@@ -95,11 +95,57 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
+      # --- SonarQube static code analysis (C#) ---
+      - name: SonarQube pre-flight
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${SONAR_HOST_URL:?Missing SONAR_HOST_URL (secret or variable)}"
+          : "${SONAR_TOKEN:?Missing SONAR_TOKEN secret}"
+          echo "Sonar endpoint: $SONAR_HOST_URL"
+
+      - name: Setup .NET for analysis
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install SonarScanner for .NET
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Add dotnet tools to PATH
+        run: echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: SonarQube begin (SonarWay)
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+        working-directory: c-sharp/src/HelloWorld
+        run: |
+          set -euo pipefail
+          # Using default SonarWay profile (no explicit override needed for Community)
+          dotnet-sonarscanner begin \
+            /k:"SCAI-CSHARP" \
+            /n:"SCAI-CSHARP-HelloWorld" \
+            /d:sonar.host.url="${SONAR_HOST_URL}" \
+            /d:sonar.login="${SONAR_TOKEN}" \
+            /d:sonar.scm.provider=git \
+            /d:sonar.sourceEncoding="UTF-8"
+
+      - name: Build project for analysis
+        working-directory: c-sharp/src/HelloWorld
+        run: dotnet build --configuration Release --no-incremental
+
+      - name: SonarQube end
+        if: always()
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+        working-directory: c-sharp/src/HelloWorld
+        run: |
+          set -euo pipefail
+          dotnet-sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || true
 
       - name: SonarQube Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1
@@ -236,57 +282,7 @@ jobs:
           set -euo pipefail
           test -s "sbom.cyclonedx.json" || { echo "SBOM not created"; ls -la; exit 2; }
 
-      # --- SonarQube static code analysis (C#) ---
-      - name: SonarQube pre-flight
-        env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
-          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
-        run: |
-          set -euo pipefail
-          : "${SONAR_HOST_URL:?Missing SONAR_HOST_URL (secret or variable)}"
-          : "${SONAR_TOKEN:?Missing SONAR_TOKEN secret}"
-          echo "Sonar endpoint: $SONAR_HOST_URL"
 
-      - name: Setup .NET for analysis
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Install SonarScanner for .NET
-        run: dotnet tool install --global dotnet-sonarscanner
-
-      - name: Add dotnet tools to PATH
-        run: echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
-
-      - name: SonarQube begin (SonarWay)
-        env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
-          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
-        working-directory: c-sharp/src/HelloWorld
-        run: |
-          set -euo pipefail
-          # Using default SonarWay profile (no explicit override needed for Community)
-          dotnet-sonarscanner begin \
-            /k:"SCAI-CSHARP" \
-            /n:"SCAI-CSHARP-HelloWorld" \
-            /d:sonar.host.url="${SONAR_HOST_URL}" \
-            /d:sonar.login="${SONAR_TOKEN}" \
-            /d:sonar.scm.provider=git \
-            /d:sonar.sourceEncoding="UTF-8"
-
-      - name: Build project for analysis
-        working-directory: c-sharp/src/HelloWorld
-        run: dotnet build --configuration Release --no-incremental
-
-      - name: SonarQube end
-        if: always()
-        env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
-          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
-        working-directory: c-sharp/src/HelloWorld
-        run: |
-          set -euo pipefail
-          dotnet-sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || true
 
       - name: Run Trivy vulnerability scanner (JSON)
         uses: aquasecurity/trivy-action@0.33.1
