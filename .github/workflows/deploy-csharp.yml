@@ -44,17 +44,21 @@ permissions:
 
 env:
   # Registry (secrets must exist in repo/environment)
-  ACR_LOGIN_SERVER:     ${{ secrets.ACR_LOGIN_SERVER }}
-  ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
-  ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
+  # ACR_LOGIN_SERVER:     ${{ secrets.ACR_LOGIN_SERVER }}
+  # ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
+  # ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
 
   IMAGE_NAME:           csharp-hello
-  ARCH:                 amd64
+  IMAGE_TAG:            ${{ secrets.IMAGE_TAG }}
+  # ARCH:                 amd64
 
-  # Azure targets (adjust container name to distinguish from FastAPI deployment)
   AZURE_RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP_NAME }}
   AZURE_CONTAINER_NAME: swft-csharp
-  AZURE_STORAGE_ACCOUNT: ${{ vars.STORAGE_ACCOUNT }}
+
+  # Azure Storage (SAS-based; no Azure login / ACI deployment)
+  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
+  AZURE_STORAGE_ACCOUNT_URL: ${{ vars.AZURE_STORAGE_ACCOUNT_URL }}
 
   # Defaults for push runs (used if no override via trivy_config)
   TRIVY_SEVERITY:       HIGH,CRITICAL
@@ -81,13 +85,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # - name: Azure Login
+      #   uses: azure/login@v2
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Set up Java (for Sonar scanner)
         uses: actions/setup-java@v4
@@ -169,11 +173,11 @@ jobs:
             echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
           } >> $GITHUB_ENV
 
-      - name: Compute image tag (pattern)
-        run: |
-          set -euo pipefail
-          # Pattern requested: <repo>_<image>_<arch>_<sha>
-            echo "IMAGE_TAG=${GITHUB_REPOSITORY##*/}_${IMAGE_NAME}_${ARCH}_${GITHUB_SHA}" >> $GITHUB_ENV
+      # - name: Compute image tag (pattern)
+      #   run: |
+      #     set -euo pipefail
+      #     # Pattern requested: <repo>_<image>_<arch>_<sha>
+      #       echo "IMAGE_TAG=${GITHUB_REPOSITORY##*/}_${IMAGE_NAME}_${ARCH}_${GITHUB_SHA}" >> $GITHUB_ENV
 
       - name: Parse inputs (Trivy + containers + switches)
         id: cfg
@@ -356,37 +360,48 @@ jobs:
           sarif_file: trivy-results.sarif
 
       # ---------- Azure uploads (work on push and manual; FLAT filenames) ----------
-      - name: Ensure Azure containers
+      - name: Ensure Azure containers (SAS)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-            az storage container create --name "${{ steps.cfg.outputs.cn_sbom }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
-            az storage container create --name "${{ steps.cfg.outputs.cn_scan }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
-            az storage container create --name "${{ steps.cfg.outputs.cn_runs }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
+        run: |
+          set -euo pipefail
+          for c in "${{ steps.cfg.outputs.cn_sbom }}" "${{ steps.cfg.outputs.cn_scan }}" "${{ steps.cfg.outputs.cn_runs }}"; do
+            az storage container create \
+              --name "$c" \
+              --account-name "${AZURE_STORAGE_ACCOUNT}" \
+              --sas-token "${AZURE_STORAGE_SAS_TOKEN}" \
+              --public-access off \
+              --only-show-errors 1>/dev/null
+          done
 
-      - name: Upload SBOM to Azure Storage (flat name)
+      - name: Upload SBOM to Azure Storage (SAS)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-            cp -f "sbom.cyclonedx.json" "${SBOM_FILE}"
-            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --file "${SBOM_FILE}" --name "${SBOM_FILE}" --overwrite true --auth-mode login
-            SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --name "${SBOM_FILE}" -o tsv)
-            echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
+        run: |
+          set -euo pipefail
+          cp -f "sbom.cyclonedx.json" "${SBOM_FILE}"
+          az storage blob upload \
+            --account-name "${AZURE_STORAGE_ACCOUNT}" \
+            --sas-token "${AZURE_STORAGE_SAS_TOKEN}" \
+            --container-name "${{ steps.cfg.outputs.cn_sbom }}" \
+            --file "${SBOM_FILE}" \
+            --name "${SBOM_FILE}" \
+            --overwrite true
+          SBOM_URL="${AZURE_STORAGE_ACCOUNT_URL}/${{ steps.cfg.outputs.cn_sbom }}/${SBOM_FILE}"
+          echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
-      - name: Upload Trivy report to Azure Storage (flat name)
+      - name: Upload Trivy report to Azure Storage (SAS)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-            cp -f "trivy-report.json" "${TRIVY_FILE}"
-            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --file "${TRIVY_FILE}" --name "${TRIVY_FILE}" --overwrite true --auth-mode login
-            TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${TRIVY_FILE}" -o tsv)
-            echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
+        run: |
+          set -euo pipefail
+          cp -f "trivy-report.json" "${TRIVY_FILE}"
+          az storage blob upload \
+            --account-name "${AZURE_STORAGE_ACCOUNT}" \
+            --sas-token "${AZURE_STORAGE_SAS_TOKEN}" \
+            --container-name "${{ steps.cfg.outputs.cn_scan }}" \
+            --file "${TRIVY_FILE}" \
+            --name "${TRIVY_FILE}" \
+            --overwrite true
+          TRIVY_URL="${AZURE_STORAGE_ACCOUNT_URL}/${{ steps.cfg.outputs.cn_scan }}/${TRIVY_FILE}"
+          echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
       # ---------- Upload each artifact as a single file ----------
       - name: Upload SBOM artifact
@@ -411,46 +426,46 @@ jobs:
           path: trivy-results.sarif
 
       # ---------- Deploy to Azure Container Instances (CLI) ----------
-      - name: Deploy to Azure Container Instance
-        env:
-          AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
-          AZURE_CONTAINER_NAME: ${{ env.AZURE_CONTAINER_NAME }}
-          ACR_LOGIN_SERVER:     ${{ env.ACR_LOGIN_SERVER }}
-          ACR_USERNAME:         ${{ env.ACR_USERNAME }}
-          ACR_PASSWORD:         ${{ env.ACR_PASSWORD }}
-          IMAGE_NAME:           ${{ env.IMAGE_NAME }}
-          IMAGE_TAG:            ${{ env.IMAGE_TAG }}
-        run: |
-          set -euo pipefail
-          if az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --only-show-errors --output none 2>/dev/null; then
-            az container delete --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --yes
-            for i in {1..30}; do
-              if ! az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" &>/dev/null; then break; fi
-              sleep 5
-            done
-          fi
-          az container create \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_CONTAINER_NAME" \
-            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
-            --registry-login-server "$ACR_LOGIN_SERVER" \
-            --registry-username     "$ACR_USERNAME" \
-            --registry-password     "$ACR_PASSWORD" \
-            --cpu 1 --memory 1 \
-            --os-type Linux \
-            --ports 80 \
-            --ip-address Public
-          PUBLIC_IP=$(az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --query "ipAddress.ip" -o tsv)
-          echo "http://$PUBLIC_IP" > "${DEPLOY_SRC}"
-          echo "ACI_URL=http://${PUBLIC_IP}" >> $GITHUB_ENV
-          test -s "${DEPLOY_SRC}"
+      # - name: Deploy to Azure Container Instance
+      #   env:
+      #     AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
+      #     AZURE_CONTAINER_NAME: ${{ env.AZURE_CONTAINER_NAME }}
+      #     ACR_LOGIN_SERVER:     ${{ env.ACR_LOGIN_SERVER }}
+      #     ACR_USERNAME:         ${{ env.ACR_USERNAME }}
+      #     ACR_PASSWORD:         ${{ env.ACR_PASSWORD }}
+      #     IMAGE_NAME:           ${{ env.IMAGE_NAME }}
+      #     IMAGE_TAG:            ${{ env.IMAGE_TAG }}
+      #   run: |
+      #     set -euo pipefail
+      #     if az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --only-show-errors --output none 2>/dev/null; then
+      #       az container delete --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --yes
+      #       for i in {1..30}; do
+      #         if ! az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" &>/dev/null; then break; fi
+      #         sleep 5
+      #       done
+      #     fi
+      #     az container create \
+      #       --resource-group "$AZURE_RESOURCE_GROUP" \
+      #       --name "$AZURE_CONTAINER_NAME" \
+      #       --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+      #       --registry-login-server "$ACR_LOGIN_SERVER" \
+      #       --registry-username     "$ACR_USERNAME" \
+      #       --registry-password     "$ACR_PASSWORD" \
+      #       --cpu 1 --memory 1 \
+      #       --os-type Linux \
+      #       --ports 80 \
+      #       --ip-address Public
+      #     PUBLIC_IP=$(az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --query "ipAddress.ip" -o tsv)
+      #     echo "http://$PUBLIC_IP" > "${DEPLOY_SRC}"
+      #     echo "ACI_URL=http://${PUBLIC_IP}" >> $GITHUB_ENV
+      #     test -s "${DEPLOY_SRC}"
 
-      - name: Upload deploy endpoint artifact
-        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('aci-endpoint.txt') != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
-          path: aci-endpoint.txt
+      # - name: Upload deploy endpoint artifact
+      #   if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('aci-endpoint.txt') != '' }}
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+      #     path: aci-endpoint.txt
 
       # ---------- Build RUN JSON AFTER Azure uploads & Deploy ----------
       - name: Ensure jq present (for RUN JSON)
@@ -482,13 +497,15 @@ jobs:
             --arg sbomUrl         "${SBOM_LINK}" \
             --arg trivyUrl        "${TRIVY_LINK}" \
             --arg cosignStatus    "${COSIGN_VERIFY_STATUS:-unknown}" \
-            --arg trivyTotal      "${TRIVY_FINDINGS_TOTAL:-0}" \
-            --arg trivyFailSet    "${TRIVY_FINDINGS_FAILSET:-0}" \
-            --arg deployFile      "${DEPLOY_FILE}" \
-            --arg aciUrl          "${ACI_URL:-}" \
+            --arg sevLevels       "${{ steps.cfg.outputs.scan_levels }}" \
+            --arg failLevels      "${{ steps.cfg.outputs.fail_levels }}" \
+            --argjson ignoreUnfix ${{ steps.cfg.outputs.ignore_unfixed }} \
+            --argjson totalFindings ${TRIVY_FINDINGS_TOTAL:-0} \
+            --argjson failFindings  ${TRIVY_FINDINGS_FAILSET:-0} \
             '{
               id: $id,
               projectName: $projectName,
+              createdAt: $timestamp,
               runNumber: $runNumber,
               repository: $repo,
               workflow: $workflow,
@@ -497,26 +514,36 @@ jobs:
               actionsRunUrl: $actionsRunUrl,
               image: { registry: $acr, name: $imageName, tag: $imageTag, digest: $imageDigest },
               artifacts: {
-                sbom: { file: $sbomFile, url: $sbomUrl },
-                trivy: { file: $trivyFile, url: $trivyUrl, findings: { total: ($trivyTotal|tonumber), failSet: ($trivyFailSet|tonumber) } },
-                sarif: { file: $sarifFile },
-                deploy: { file: $deployFile, url: $aciUrl }
+                azure: azure_links,
+                files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
               },
-              supplyChain: { cosign: { verifyStatus: $cosignStatus } }
+              assessment: {
+                cosign: { verifyStatus: $cosignStatus },
+                trivy: {
+                  scanSeverities: $sevLevels,
+                  ignoreUnfixed: $ignoreUnfix,
+                  failSeverities: $failLevels,
+                  findings: { total: $totalFindings, failSet: $failFindings }
+                }
+              },
             }' > run.json
           test -s run.json
           ls -l run.json
 
-      - name: Upload RUN JSON to Azure Storage (flat name)
+      - name: Upload RUN JSON to Azure Storage (SAS)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-            cp -f run.json "${RUN_JSON_FILE}"
-            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --file "${RUN_JSON_FILE}" --name "${RUN_JSON_FILE}" --overwrite true --auth-mode login
-            RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
-            echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
+        run: |
+          set -euo pipefail
+          cp -f run.json "${RUN_JSON_FILE}"
+          az storage blob upload \
+            --account-name "${AZURE_STORAGE_ACCOUNT}" \
+            --sas-token "${AZURE_STORAGE_SAS_TOKEN}" \
+            --container-name "${{ steps.cfg.outputs.cn_runs }}" \
+            --file "${RUN_JSON_FILE}" \
+            --name "${RUN_JSON_FILE}" \
+            --overwrite true
+          RUN_JSON_URL="${AZURE_STORAGE_ACCOUNT_URL}/${{ steps.cfg.outputs.cn_runs }}/${RUN_JSON_FILE}"
+          echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
 
       - name: Upload RUN JSON artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('run.json') != '' }}
@@ -533,5 +560,4 @@ jobs:
             echo "- SBOM: ${SBOM_URL:-'(n/a)'}";
             echo "- Trivy: ${TRIVY_URL:-'(n/a)'}";
             echo "- Run JSON: ${RUN_JSON_URL:-'(n/a)'}";
-            echo "- ACI URL: ${ACI_URL:-'(n/a)'}";
           } >> "$GITHUB_STEP_SUMMARY"
