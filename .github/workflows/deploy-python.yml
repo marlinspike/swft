@@ -10,7 +10,7 @@ on:
         type: string
         default: "swft-demo"
       upload_to_azure:
-        description: "Upload SBOM/scan/run JSON to Azure Storage (RBAC via azure/login)"
+        description: "Upload SBOM/scan/run JSON to Azure Storage (SAS token)"
         type: boolean
         default: true
       upload_artifacts:
