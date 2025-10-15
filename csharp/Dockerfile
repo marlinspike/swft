@@ -7,25 +7,35 @@ ARG BASE_RUNTIME=mcr.microsoft.com/dotnet/runtime:8.0-alpine
 # Restore
 FROM ${BASE_SDK} AS restore
 WORKDIR /src
-COPY ./src/HelloWorld/HelloWorld.csproj ./src/HelloWorld/
+COPY ./app/src/HelloWorld/HelloWorld.csproj ./app/src/HelloWorld/
 RUN --mount=type=cache,target=/root/.nuget/packages \
-	dotnet restore ./src/HelloWorld/HelloWorld.csproj --nologo
+	dotnet restore ./app/src/HelloWorld/HelloWorld.csproj --nologo
 
 # Build
 FROM ${BASE_SDK} AS build
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.nuget/packages \
-	dotnet restore ./src/HelloWorld/HelloWorld.csproj --nologo \
-	&& dotnet build ./src/HelloWorld/HelloWorld.csproj -c Release -o /app/build --no-restore --nologo -p:ContinuousIntegrationBuild=true
+	dotnet restore ./app/src/HelloWorld/HelloWorld.csproj --nologo \
+	&& dotnet build ./app/src/HelloWorld/HelloWorld.csproj \
+		-c Release \
+		-o /app/build \
+		--no-restore \
+		--nologo \
+		-p:ContinuousIntegrationBuild=true
 
 # Publish
 FROM ${BASE_SDK} AS publish
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.nuget/packages \
-	dotnet restore ./src/HelloWorld/HelloWorld.csproj --nologo \
-	&& dotnet publish ./src/HelloWorld/HelloWorld.csproj -c Release -o /app/publish --no-restore --nologo -p:ContinuousIntegrationBuild=true
+	dotnet restore ./app/src/HelloWorld/HelloWorld.csproj --nologo \
+	&& dotnet publish ./app/src/HelloWorld/HelloWorld.csproj \
+		-c Release \
+		-o /app/publish \
+		--no-restore \
+		--nologo \
+		-p:ContinuousIntegrationBuild=true
 
 # Strict runtime (no SDK)
 FROM ${BASE_RUNTIME} AS runtime
