@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen bg-{{ background_color }}">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center mb-12">Hello World!</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Time Square -->
+            <div id="time-square" class="bg-gray-100 p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-2">Time</h2>
+                <p id="current-time" class="text-2xl font-bold">Loading...</p>
+            </div>
+
+            <!-- Container ID Square -->
+            <div class="bg-gray-100 p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-2">Container ID</h2>
+                <p class="text-2xl font-bold">{{ container_id }}</p>
+            </div>
+
+            <!-- Custom Message Square -->
+            <div class="bg-gray-100 p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-2">Message</h2>
+                <p class="text-2xl font-bold">{{ custom_message }}</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateTime() {
+            try {
+                const response = await fetch('/time');
+                const data = await response.json();
+                document.getElementById('current-time').textContent = data.time;
+            } catch (error) {
+                console.error('Error fetching time:', error);
+            }
+        }
+
+        // Initial time update
+        updateTime();
+        // Update time every second
+        setInterval(updateTime, 1000);
+    </script>
+</div>
+{% endblock %}
