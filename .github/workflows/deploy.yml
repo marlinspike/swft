@@ -3,6 +3,12 @@ name: SWFT Container CI/CD
 on:
   push:
     branches: [ main ]
+    paths:
+      - "python/**"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "python/**"
   workflow_dispatch:
     inputs:
       project_name:
@@ -70,7 +76,7 @@ env:
   RUNJSON_SRC:  run.json
 
 jobs:
-  build-and-deploy:
+  build-and-upload:
     runs-on: self-hosted
     permissions:
       contents: read
@@ -504,17 +510,6 @@ jobs:
         with:
           name: swft-run-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: run.json
-
-      - name: Azure upload summary
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        run: |
-          {
-            echo "### Azure uploads"
-            echo ""
-            echo "- SBOM:  ${SBOM_URL:-'(n/a)'}"
-            echo "- Trivy: ${TRIVY_URL:-'(n/a)'}"
-            echo "- Run JSON: ${RUN_JSON_URL:-'(n/a)'}"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Azure upload summary
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
