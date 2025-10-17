@@ -88,37 +88,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug: show commit & files
-        run: |
+      - name: Debug show commit & files
+        run: |-
+          set -e
           echo "=== Environment ==="
           echo "GITHUB_REF: $GITHUB_REF"
           echo "GITHUB_SHA: $GITHUB_SHA"
           echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-          echo "\n=== Repository Status ==="
+          echo -e "\n=== Repository Status ==="
           git status
-          echo "\n=== Workflow File Info ==="
+          echo -e "\n=== Workflow File Info ==="
           echo "Looking for workflow file at: .github/workflows/deploy.yml"
           if [ -f ".github/workflows/deploy.yml" ]; then
             echo "Workflow file exists at the expected location"
-            git log -1 --pretty=oneline -- .github/workflows/deploy.yml
+            git log -1 --pretty=oneline -- .github/workflows/deploy.yml || echo "No git history found for workflow file"
           else
             echo "Workflow file NOT found at .github/workflows/deploy.yml"
             echo "Current directory: $(pwd)"
-            echo "\n=== Directory Contents ==="
+            echo -e "\n=== Directory Contents ==="
             ls -la
-            echo "\n=== .github/ Contents ==="
+            echo -e "\n=== .github/ Contents ==="
             ls -la .github/ 2>/dev/null || echo ".github/ directory not found"
-            echo "\n=== .github/workflows/ Contents ==="
+            echo -e "\n=== .github/workflows/ Contents ==="
             ls -la .github/workflows/ 2>/dev/null || echo ".github/workflows/ directory not found"
           fi
-          echo "\n=== Python Directory ==="
+          echo -e "\n=== Python Directory ==="
           if [ -d "python" ]; then
             ls -la python
           else
             echo "python/ directory not found"
           fi
 
-      - name: Guard: ensure python/requirements.txt exists
+      - name: Guard ensure python/requirements.txt exists
         run: |
           test -f python/requirements.txt || {
             echo "::error::python/requirements.txt is missing in this checkout";
