@@ -56,7 +56,7 @@ env:
   # Azure targets
   AZURE_RESOURCE_GROUP: demo-swft-cicd
   AZURE_CONTAINER_NAME: swft-fastapi
-  AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_ACCOUNT: ${{ vars.STORAGE_ACCOUNT }}
   AZ_SAS_TOKEN_STORAGE: ${{ secrets.AZ_SAS_TOKEN_STORAGE }}
 
   # Defaults for push runs (used if no override via trivy_config)
