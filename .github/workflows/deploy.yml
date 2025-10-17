@@ -502,27 +502,21 @@ jobs:
           ls -l run.json
 
       - name: Upload RUN JSON to Azure Storage (flat name)
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
+        if: ${{ steps.validate_azure.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            test -s run.json || { echo "run.json not found"; pwd; ls -la; exit 2; }
+            echo "Uploading run.json to Azure Storage..."
+            test -s run.json || { echo "Error: run.json not found or empty"; pwd; ls -la; exit 2; }
             az storage blob upload \
-            --account-name "${AZURE_STORAGE_ACCOUNT}" \
-            --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-            --container-name "${{ steps.cfg.outputs.cn_runs }}" \
-            --file run.json \
-            --name "${RUN_JSON_FILE}" \
-            --overwrite true \
-            --sas-token "${AZ_SAS_TOKEN_STORAGE}" \
-            --auth-mode key
-            RUN_JSON_URL=$(az storage blob url \
-            --account-name "${AZURE_STORAGE_ACCOUNT}" \
-            --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-            --container-name "${{ steps.cfg.outputs.cn_runs }}" \
-            --name "${RUN_JSON_FILE}" -o tsv)
-            echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --sas-token "$AZ_SAS_TOKEN_STORAGE" \
+              --container-name "${{ steps.cfg.outputs.cn_runs || 'runs' }}" \
+              --name "${{ env.RUNJSON_SRC }}" \
+              --file "${{ env.RUNJSON_SRC }}" \
+              --overwrite true
+            echo "run.json uploaded successfully"
 
       - name: Upload RUN JSON artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('run.json') != '' }}
