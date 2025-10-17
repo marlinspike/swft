@@ -145,7 +145,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r python/requirements.txt
           if [ -f python/requirements-dev.txt ]; then pip install -r python/requirements-dev.txt; fi
-          pytest --maxfail=1 --disable-warnings -q --cov=python/app --cov-report=xml:coverage.xml
+          cd python && \
+          pytest tests/ -v --cov=app --cov-report=xml:coverage.xml
 
       - name: Set up Java (for Sonar scanner)
         uses: actions/setup-java@v4
@@ -229,7 +230,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./python  
           push: true
           tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
