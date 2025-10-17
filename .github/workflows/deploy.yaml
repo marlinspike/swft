@@ -98,16 +98,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('python/requirements*.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Install deps & test with coverage
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pytest --maxfail=1 --disable-warnings -q --cov=app --cov-report=xml:coverage.xml
+          pip install -r python/requirements.txt || true
+          if [ -f python/requirements-dev.txt ]; then pip install -r python/requirements-dev.txt; fi
+          pytest --maxfail=1 --disable-warnings -q --cov=python/app --cov-report=xml:coverage.xml
 
       - name: Set up Java (for Sonar scanner)
         uses: actions/setup-java@v4
