@@ -374,66 +374,37 @@ jobs:
         # category intentionally omitted (single SARIF)
 
       # ---------- Azure uploads (work on push and manual; FLAT filenames) ----------
-      - name: Ensure Azure containers (SAS)
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
-            for CN in "${{ steps.cfg.outputs.cn_sbom }}" "${{ steps.cfg.outputs.cn_scan }}" "${{ steps.cfg.outputs.cn_runs }}"; do
-              az storage container create \
-              --account-name "${AZURE_STORAGE_ACCOUNT}" \
-              --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-              --name "$CN" \
-              --sas-token "${AZ_SAS_TOKEN_STORAGE}" \
-              --auth-mode key >/dev/null
-            done
-
       - name: Upload SBOM to Azure Storage (SAS)
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
+        if: ${{ steps.validate_azure.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            cp -f "sbom.cyclonedx.json" "${SBOM_FILE}"
+            echo "Uploading SBOM to Azure Storage..."
             az storage blob upload \
-            --account-name "${AZURE_STORAGE_ACCOUNT}" \
-            --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-            --container-name "${{ steps.cfg.outputs.cn_sbom }}" \
-            --file "${SBOM_FILE}" \
-            --name "${SBOM_FILE}" \
-            --overwrite true \
-            --sas-token "${AZ_SAS_TOKEN_STORAGE}" \
-            --auth-mode key
-            SBOM_URL=$(az storage blob url \
-             --account-name "${AZURE_STORAGE_ACCOUNT}" \
-             --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-             --container-name "${{ steps.cfg.outputs.cn_sbom }}" \
-             --name "${SBOM_FILE}" -o tsv)
-            echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --sas-token "$AZ_SAS_TOKEN_STORAGE" \
+              --container-name "${{ steps.cfg.outputs.cn_sbom || 'sboms' }}" \
+              --name "${{ env.SBOM_SRC }}" \
+              --file "${{ env.SBOM_SRC }}" \
+              --overwrite true
+            echo "SBOM uploaded successfully"
 
       - name: Upload Trivy report to Azure Storage (flat name)
-        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
+        if: ${{ steps.validate_azure.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            cp -f "trivy-report.json" "${TRIVY_FILE}"
+            echo "Uploading Trivy report to Azure Storage..."
             az storage blob upload \
-            --account-name "${AZURE_STORAGE_ACCOUNT}" \
-            --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-            --container-name "${{ steps.cfg.outputs.cn_scan }}" \
-            --file "${TRIVY_FILE}" \
-            --name "${TRIVY_FILE}" \
-            --overwrite true \
-            --sas-token "${AZ_SAS_TOKEN_STORAGE}" \
-            --auth-mode key
-            TRIVY_URL=$(az storage blob url \
-             --account-name "${AZURE_STORAGE_ACCOUNT}" \
-             --account-endpoint "https://${AZURE_STORAGE_ACCOUNT}.blob.core.usgovcloudapi.net" \
-             --container-name "${{ steps.cfg.outputs.cn_scan }}" \
-             --name "${TRIVY_FILE}" -o tsv)
-            echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --sas-token "$AZ_SAS_TOKEN_STORAGE" \
+              --container-name "${{ steps.cfg.outputs.cn_scan || 'scans' }}" \
+              --name "${{ env.TRIVY_SRC }}" \
+              --file "${{ env.TRIVY_SRC }}" \
+              --overwrite true
+            echo "Trivy report uploaded successfully"
 
       # ---------- Upload each artifact as a single file ----------
       - name: Upload SBOM artifact
