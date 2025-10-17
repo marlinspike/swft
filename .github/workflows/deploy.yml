@@ -154,6 +154,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       
+      - name: Test SonarQube Connection
+        run: |
+          echo "Testing SonarQube connection..."
+          echo "SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}"
+          curl -v -I ${{ secrets.SONAR_HOST_URL }}
+          curl -v ${{ secrets.SONAR_HOST_URL }}/api/server/version
+
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
         env:
