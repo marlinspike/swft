@@ -88,6 +88,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug: show commit & files
+        run: |
+          echo "Ref: $GITHUB_REF  SHA: $GITHUB_SHA"
+          echo "Workflow file in this run:"
+          git log -1 --pretty=oneline -- .github/workflows/deploy.yml || true
+          echo "--- repo root ---"
+          ls -la
+          echo "--- python dir ---"
+          ls -la python || true
+
+      - name: Guard: ensure python/requirements.txt exists
+        run: |
+          test -f python/requirements.txt || {
+            echo "::error::python/requirements.txt is missing in this checkout";
+            exit 12;
+          }
+
       # === QUALITY CHECKS (uses same Azure auth) ===
       - name: Set up Python
         uses: actions/setup-python@v5
