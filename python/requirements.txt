@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 pydantic>=2.11.0
 pytest>=8.3.4
 pytest-cov>=4.1.0
+httpx>=0.23.0  # Required for FastAPI TestClient
