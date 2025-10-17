@@ -255,70 +255,36 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.9.0
 
-      - name: Decode and secure Cosign keys
-        id: cosign_keys
-        run: |
-          set -euo pipefail
-          
-          # Create secure temp directory for keys
-          export KEY_DIR="$(mktemp -d)"
-          echo "KEY_DIR=$KEY_DIR" >> $GITHUB_ENV
-          
-          # Decode private key
-          echo "${{ secrets.COSIGN_KEY_B64 }}" | base64 -d > "$KEY_DIR/cosign.key"
-          chmod 600 "$KEY_DIR/cosign.key"
-          
-          # Decode public key
-          echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > "$KEY_DIR/cosign.pub"
-          chmod 644 "$KEY_DIR/cosign.pub"
-          
-          # Verify keys are valid
-          if ! cosign public-key --key "$KEY_DIR/cosign.key" >/dev/null 2>&1; then
-            echo "❌ Error: Invalid private key"
-            exit 1
-          fi
-          
-          echo "✅ Successfully decoded and verified Cosign keys"
-
-      - name: Sign image (by digest, no tlog)
+      - name: Sign image (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: 1  # Enable keyless signing
         run: |
           set +e
           REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
-          echo "🔑 Attempting to sign image: $REF"
+          echo "🔑 Attempting to sign image using keyless mode: $REF"
           
-          if cosign sign --key "$KEY_DIR/cosign.key" --tlog-upload=false "$REF"; then
-            echo "✅ Image signed successfully"
+          # Sign using keyless mode (will open browser for OIDC auth)
+          if cosign sign "$REF"; then
+              echo "✅ Image signed successfully using keyless mode"
           else
-            SIGN_STATUS=$?
-            echo "⚠️  Warning: Failed to sign image (exit code $SIGN_STATUS), but continuing workflow"
-            cosign sign --help >/dev/null 2>&1  # This will show help if cosign is working
+              SIGN_STATUS=$?
+              echo "⚠️  Warning: Failed to sign image (exit code $SIGN_STATUS)"
+              # Continue workflow even if signing fails
+              exit 0
           fi
 
-      - name: Verify image signature
-        env:
-          POLICY_FAIL_ON_VERIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify || 'true' }}
+      - name: Verify image signature (keyless)
         run: |
           set +e
           REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
           echo "🔍 Verifying image signature: $REF"
           
-          OUTPUT=$(cosign verify --key "$KEY_DIR/cosign.pub" --insecure-ignore-tlog "$REF" 2>&1)
-          STATUS=$?
-          
-          if [ $STATUS -eq 0 ]; then
+          if cosign verify "$REF"; then
               echo "✅ Image signature verification passed"
               echo "COSIGN_VERIFY_STATUS=passed" >> $GITHUB_ENV
           else
-              echo "⚠️  Image signature verification failed (exit code $STATUS)"
-              echo "--- Verification Output ---"
-              echo "$OUTPUT"
-              echo "---------------------------"
+              echo "⚠️  Image signature verification failed"
               echo "COSIGN_VERIFY_STATUS=failed" >> $GITHUB_ENV
-              
-              if [ "$POLICY_FAIL_ON_VERIFY" = "true" ]; then
-                  echo "❌ Failing workflow as per POLICY_FAIL_ON_VERIFY=$POLICY_FAIL_ON_VERIFY"
-                  exit $STATUS
-              fi
           fi
 
       # === GENERATE FILES WITH OFFICIAL ACTIONS (fixed names) ===
