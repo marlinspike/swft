@@ -1,4 +1,4 @@
-# Vulnerable dependencies for CVE testing (compatible versions)
+# Vulnerable dependencies for CVE testing (no build dependencies)
 fastapi==0.68.0        # CVE-2021-32677
 uvicorn==0.15.0        # Multiple CVEs
 jinja2==2.11.0         # CVE-2020-28493
@@ -7,14 +7,12 @@ pydantic==1.8.2        # CVE-2021-29510
 pytest>=8.3.4
 pytest-cov>=4.1.0
 httpx>=0.23.0
-requests==2.25.1       # CVE-2022-30767
-pillow==9.0.0          # CVE-2022-22817 (uses pre-built wheels)
-pyyaml==5.3.1          # CVE-2020-14343
-cryptography==3.4.8    # CVE-2022-3602
+requests==2.25.1       # CVE-2021-33503
+urllib3==1.26.5       # CVE-2021-33503
 django==3.1.14        # CVE-2021-35042
 flask==1.1.4          # CVE-2023-30861 (compatible with Jinja2 2.x)
 werkzeug==1.0.1       # CVE-2023-25577 (compatible with Flask 1.x)
 click==7.1.2           # CVE-2022-42969
-urllib3==1.26.5       # CVE-2023-45803
 setuptools==65.5.0    # CVE-2024-6345
 wheel==0.37.1         # Compatible version
+markupsafe==1.1.1     # CVE-2019-14853 (required by Jinja2)
