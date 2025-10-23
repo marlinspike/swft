@@ -215,6 +215,11 @@ jobs:
           set -euo pipefail
           echo "=== Exporting CodeQL Database ==="
           
+          # Use existing CodeQL CLI installation
+          CODEQL_CLI="/opt/codeql/codeql"
+          echo "🔍 Using CodeQL CLI at: $CODEQL_CLI"
+          $CODEQL_CLI --version
+          
           # Find the CodeQL database directory
           DB_PATH="${{ runner.temp }}/codeql_databases/python"
           if [ ! -d "$DB_PATH" ]; then
@@ -230,7 +235,7 @@ jobs:
             
             # Export database as compressed archive using CodeQL CLI
             echo "📦 Creating database bundle using CodeQL CLI..."
-            codeql database bundle --output="codeql-export/codeql-database-python.tar.gz" "$DB_PATH"
+            $CODEQL_CLI database bundle --output="codeql-export/codeql-database-python.tar.gz" "$DB_PATH"
             
             echo "✅ CodeQL database exported to: codeql-export/codeql-database-python.tar.gz"
             ls -la codeql-export/
