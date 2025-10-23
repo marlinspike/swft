@@ -197,7 +197,8 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: csharp,python
+          languages: python
+          source-root: python
 
       - name: Autobuild (CodeQL)
         uses: github/codeql-action/autobuild@v3
