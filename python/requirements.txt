@@ -1,8 +1,15 @@
-fastapi>=0.109.0
-uvicorn>=0.27.0
-jinja2>=3.1.2
+# Vulnerable dependencies for CVE testing
+fastapi==0.68.0  # CVE-2021-32677
+uvicorn==0.15.0  # Multiple CVEs
+jinja2==2.10.1   # CVE-2020-28493
 python-dotenv>=1.0.0
-pydantic>=2.11.0
+pydantic==1.8.2  # CVE-2021-29510
 pytest>=8.3.4
 pytest-cov>=4.1.0
-httpx>=0.23.0  # Required for FastAPI TestClient
+httpx>=0.23.0
+requests==2.25.1  # CVE-2022-25896
+pillow==8.2.0     # CVE-2021-34552
+pyyaml==5.4.1     # CVE-2021-42036
+cryptography==3.3.2  # CVE-2021-37573
+django==3.1.12   # CVE-2021-35042 (not used but will trigger scanner)
+flask==1.1.4     # CVE-2022-30767 (not used but will trigger scanner)

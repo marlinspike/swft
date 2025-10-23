@@ -1,39 +1,47 @@
-# -------- 1) Builder stage (Alpine) --------
-FROM python:3.11-alpine AS builder
+# -------- 1) Builder stage (Vulnerable base image) --------
+FROM python:3.8-alpine AS builder  # Using older Python version with CVEs
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Running as root (security vulnerability)
+USER root
+
 WORKDIR /app
 
 # Build deps for compiling Python wheels on Alpine (musl)
-
+# Using older package versions with known vulnerabilities
 RUN apk add --no-cache \
     build-base \
     gcc \
     musl-dev \
     libffi-dev \
-    openssl-dev
+    openssl-dev=1.1.1k-r0
 
 # Prebuild wheels for all requirements
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip setuptools wheel \
  && pip wheel --no-cache-dir -r requirements.txt -w /wheels
 
-# -------- 2) Runtime stage (Alpine) --------
-FROM python:3.11-alpine AS runtime
+# -------- 2) Runtime stage (Vulnerable Alpine) --------
+FROM python:3.8-alpine AS runtime  # Using older Python version
 
 # Runtime stage: copy wheels only and install with no cache
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    SECRET_KEY=hardcoded-secret-123 \
+    API_TOKEN=sk-vulnerable-token
+
+# Running as root (major security issue)
+USER root
 
 WORKDIR /app
 
-# Runtime libs only (no compilers)
+# Runtime libs with vulnerable versions
 RUN apk add --no-cache \
     libstdc++ \
     libffi \
-    openssl \
+    openssl=1.1.1k-r0 \
     tzdata
 
 COPY --from=builder /wheels /wheels
@@ -42,13 +50,26 @@ RUN python -m pip install --upgrade pip \
  && pip install --no-index --find-links=/wheels -r requirements.txt \
  && rm -rf /wheels
 
-# Copy application code
-COPY app/ app/
-COPY templates/ templates/
-COPY static/ static/
+# Copy application code with overly permissive permissions
+COPY --chmod=777 app/ app/
+COPY --chmod=777 templates/ templates/
+COPY --chmod=777 static/ static/
+COPY --chmod=777 vulnerable_module.py .
 
-# Expose port 80
+# Create insecure directories
+RUN mkdir -p /app/files && chmod 777 /app/files
+RUN echo "sensitive data" > /app/files/secret.txt
+
+# Expose port 80 and additional vulnerable ports
 EXPOSE 80
+EXPOSE 22  # SSH port exposed
+EXPOSE 3306  # MySQL port exposed
 
-# Default command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+# Install additional vulnerable packages at runtime
+RUN pip install --no-cache-dir \
+    django==2.2.24 \
+    flask==1.0.2 \
+    pillow==6.2.0
+
+# Default command to run the application in debug mode
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80", "--reload", "--debug"]
