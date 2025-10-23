@@ -208,23 +208,6 @@ jobs:
         with:
           category: "/language:python"
 
-      # Install CodeQL CLI for database export
-      - name: Install CodeQL CLI
-        if: always()
-        run: |
-          set -euo pipefail
-          echo "=== Installing CodeQL CLI ==="
-          
-          # Download and install CodeQL CLI
-          CODEQL_VERSION="2.15.3"
-          wget -q "https://github.com/github/codeql-cli-binaries/releases/download/v${CODEQL_VERSION}/codeql-linux64.zip"
-          unzip -q codeql-linux64.zip
-          sudo mv codeql /usr/local/bin/
-          
-          # Verify installation
-          codeql version
-          echo "✅ CodeQL CLI installed successfully"
-
       # Export CodeQL database for later querying
       - name: Export CodeQL Database
         if: always()
