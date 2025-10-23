@@ -208,6 +208,23 @@ jobs:
         with:
           category: "/language:python"
 
+      # Install CodeQL CLI for database export
+      - name: Install CodeQL CLI
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "=== Installing CodeQL CLI ==="
+          
+          # Download and install CodeQL CLI
+          CODEQL_VERSION="2.15.3"
+          wget -q "https://github.com/github/codeql-cli-binaries/releases/download/v${CODEQL_VERSION}/codeql-linux64.zip"
+          unzip -q codeql-linux64.zip
+          sudo mv codeql /usr/local/bin/
+          
+          # Verify installation
+          codeql version
+          echo "✅ CodeQL CLI installed successfully"
+
       # Export CodeQL database for later querying
       - name: Export CodeQL Database
         if: always()
@@ -228,16 +245,22 @@ jobs:
             # Create export directory
             mkdir -p codeql-export
             
-            # Export database as compressed archive
+            # Export database as compressed archive using CodeQL CLI
+            echo "📦 Creating database bundle using CodeQL CLI..."
             codeql database bundle --output="codeql-export/codeql-database-python.tar.gz" "$DB_PATH"
             
             echo "✅ CodeQL database exported to: codeql-export/codeql-database-python.tar.gz"
             ls -la codeql-export/
+            echo "📊 Archive size: $(du -h codeql-export/codeql-database-python.tar.gz)"
           else
             echo "⚠️ CodeQL database not found at expected locations"
             echo "Searching for CodeQL databases..."
             find "${{ runner.temp }}" -name "*codeql*" -type d 2>/dev/null || true
             find "$GITHUB_WORKSPACE" -name "*codeql*" -type d 2>/dev/null || true
+            
+            # List contents of runner temp to help debug
+            echo "📂 Contents of runner temp:"
+            ls -la "${{ runner.temp }}/" 2>/dev/null || true
           fi
 
       # === DOCKER BUILD & DEPLOY (uses same Azure auth) ===
