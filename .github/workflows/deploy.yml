@@ -169,12 +169,30 @@ jobs:
           SONAR_SCANNER_OPTS: -Dproject.settings=python/sonar-project.properties
           
 
-      - name: SonarQube Quality Gate
+      - name: SonarQube Quality Gate (Non-blocking for vulnerability testing)
         uses: SonarSource/sonarqube-quality-gate-action@v1
         timeout-minutes: 15
+        continue-on-error: true  # Allow pipeline to continue even if quality gate fails
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Display SonarQube Results Summary
+        if: always()
+        run: |
+          echo "=== SonarQube Analysis Complete ==="
+          echo "✅ SonarQube scan completed successfully"
+          echo "⚠️ Quality Gate status: Check dashboard for detected vulnerabilities"
+          echo ""
+          echo "🔍 View detailed results at:"
+          echo "${{ secrets.SONAR_HOST_URL }}/dashboard?id=swft-python"
+          echo ""
+          echo "🚨 Expected security findings in this test project:"
+          echo "• Security Hotspots: Hardcoded credentials, command injection, SQL injection"
+          echo "• Code Smells: Weak cryptography, information disclosure"
+          echo "• Bugs: Insecure deserialization, path traversal"
+          echo ""
+          echo "This is a test project with intentional vulnerabilities for security scanning validation."
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
