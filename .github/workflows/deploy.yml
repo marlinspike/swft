@@ -203,6 +203,43 @@ jobs:
       - name: Autobuild (CodeQL)
         uses: github/codeql-action/autobuild@v3
 
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+      # Export CodeQL database for later querying
+      - name: Export CodeQL Database
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "=== Exporting CodeQL Database ==="
+          
+          # Find the CodeQL database directory
+          DB_PATH="${{ runner.temp }}/codeql_databases/python"
+          if [ ! -d "$DB_PATH" ]; then
+            # Alternative paths where CodeQL might store the database
+            DB_PATH="${GITHUB_WORKSPACE}/.github/codeql/databases/python"
+          fi
+          
+          if [ -d "$DB_PATH" ]; then
+            echo "✅ Found CodeQL database at: $DB_PATH"
+            
+            # Create export directory
+            mkdir -p codeql-export
+            
+            # Export database as compressed archive
+            codeql database bundle --output="codeql-export/codeql-database-python.tar.gz" "$DB_PATH"
+            
+            echo "✅ CodeQL database exported to: codeql-export/codeql-database-python.tar.gz"
+            ls -la codeql-export/
+          else
+            echo "⚠️ CodeQL database not found at expected locations"
+            echo "Searching for CodeQL databases..."
+            find "${{ runner.temp }}" -name "*codeql*" -type d 2>/dev/null || true
+            find "$GITHUB_WORKSPACE" -name "*codeql*" -type d 2>/dev/null || true
+          fi
+
       # === DOCKER BUILD & DEPLOY (uses same Azure auth) ===
 
       - name: Derive pretty names & timestamp
@@ -214,6 +251,7 @@ jobs:
             echo "SBOM_FILE=${FILE_PREFIX}-sbom.json"
             echo "TRIVY_FILE=${FILE_PREFIX}-trivy.json"
             echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif"
+            echo "CODEQL_DB_FILE=${FILE_PREFIX}-codeql-db.tar.gz"
             echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt"
             echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json"
             echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
@@ -433,6 +471,29 @@ jobs:
               --overwrite true
             echo "Trivy report uploaded successfully"
 
+      - name: Upload CodeQL Database to Azure Storage
+        if: ${{ steps.validate_azure.outputs.upload_to_azure == 'true' && hashFiles('codeql-export/codeql-database-python.tar.gz') != '' }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            echo "Copying CodeQL database to final location..."
+            cp "codeql-export/codeql-database-python.tar.gz" "${CODEQL_DB_FILE}"
+            
+            echo "Uploading CodeQL database to Azure Storage..."
+            az storage blob upload \
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --sas-token "$AZ_SAS_TOKEN_STORAGE" \
+              --container-name "${{ steps.cfg.outputs.cn_scan || 'scans' }}" \
+              --name "${CODEQL_DB_FILE}" \
+              --file "${CODEQL_DB_FILE}" \
+              --overwrite true
+            echo "CodeQL database uploaded successfully"
+            
+            # Store URL for later use
+            CODEQL_DB_URL="https://$AZURE_STORAGE_ACCOUNT.blob.core.windows.net/${{ steps.cfg.outputs.cn_scan || 'scans' }}/${CODEQL_DB_FILE}"
+            echo "CODEQL_DB_URL=$CODEQL_DB_URL" >> $GITHUB_ENV
+
       # ---------- Upload each artifact as a single file ----------
       - name: Upload SBOM artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('sbom.cyclonedx.json') != '' }}
@@ -455,6 +516,13 @@ jobs:
           name: trivy-sarif-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
           path: trivy-results.sarif
 
+      - name: Upload CodeQL Database artifact
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('codeql-export/codeql-database-python.tar.gz') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-database-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          path: codeql-export/codeql-database-python.tar.gz
+
       # ---------- Build RUN JSON AFTER Azure uploads & Deploy ----------
       - name: Ensure jq present (for RUN JSON)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
@@ -465,6 +533,7 @@ jobs:
           set -euo pipefail
           SBOM_LINK="${SBOM_URL:-}"
           TRIVY_LINK="${TRIVY_URL:-}"
+          CODEQL_LINK="${CODEQL_DB_URL:-}"
           jq -n \
             --arg id              "${RUN_ID}" \
             --arg projectName     "${PROJECT_NAME}" \
@@ -482,8 +551,10 @@ jobs:
             --arg sbomFile        "${SBOM_FILE}" \
             --arg trivyFile       "${TRIVY_FILE}" \
             --arg sarifFile       "${SARIF_FILE}" \
+            --arg codeqlDbFile    "${CODEQL_DB_FILE}" \
             --arg sbomUrl         "${SBOM_LINK}" \
             --arg trivyUrl        "${TRIVY_LINK}" \
+            --arg codeqlUrl       "${CODEQL_LINK}" \
             --arg aciName         "${AZURE_CONTAINER_NAME}" \
             --arg aciRg           "${AZURE_RESOURCE_GROUP}" \
             --arg aciUrl          "${ACI_URL:-}" \
@@ -495,8 +566,8 @@ jobs:
             --argjson failFindings  ${TRIVY_FINDINGS_FAILSET:-0} \
             '
             def azure_links:
-              if (($sbomUrl|length) > 0 or ($trivyUrl|length) > 0)
-              then { sbom: $sbomUrl, trivy: $trivyUrl }
+              if (($sbomUrl|length) > 0 or ($trivyUrl|length) > 0 or ($codeqlUrl|length) > 0)
+              then { sbom: $sbomUrl, trivy: $trivyUrl, codeqlDb: $codeqlUrl }
               else null
               end;
 
@@ -512,7 +583,7 @@ jobs:
               image: { registry: $acr, name: $imageName, tag: $imageTag, digest: $imageDigest },
               artifacts: {
                 azure: azure_links,
-                files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
+                files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile, codeqlDb: $codeqlDbFile }
               },
               assessment: {
                 cosign: { verifyStatus: $cosignStatus },
@@ -560,5 +631,25 @@ jobs:
             echo ""
             echo "- SBOM:  ${SBOM_URL:-'(n/a)'}"
             echo "- Trivy: ${TRIVY_URL:-'(n/a)'}"
+            echo "- CodeQL Database: ${CODEQL_DB_URL:-'(n/a)'}"
             echo "- Run JSON: ${RUN_JSON_URL:-'(n/a)'}"
+            echo ""
+            echo "### CodeQL Database Usage"
+            echo ""
+            echo "The CodeQL database has been exported and uploaded alongside Trivy results."
+            echo "To query the database later:"
+            echo ""
+            echo '```bash'
+            echo "# Download the database"
+            echo "wget '${CODEQL_DB_URL:-'<codeql-db-url>'}' -O codeql-database-python.tar.gz"
+            echo ""
+            echo "# Extract the database"
+            echo "tar -xzf codeql-database-python.tar.gz"
+            echo ""
+            echo "# Run custom CodeQL queries"
+            echo "codeql database analyze ./codeql-database-python --format=sarif-latest --output=custom-results.sarif -- query.ql"
+            echo ""
+            echo "# Or run standard query suites"
+            echo "codeql database analyze ./codeql-database-python --format=sarif-latest --output=security-results.sarif python-security-and-quality.qls"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
