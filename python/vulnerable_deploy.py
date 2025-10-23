@@ -7,16 +7,28 @@ This script contains multiple security vulnerabilities intentionally
 import os
 import subprocess
 import pickle
-import yaml
 import tempfile
-import requests
 import hashlib
-import urllib3
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
 
-# Disable SSL warnings (vulnerability)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Import optional dependencies safely
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+try:
+    import requests
+    import urllib3
+    # Disable SSL warnings (vulnerability)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+except ImportError:
+    requests = urllib3 = None
+
+try:
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.backends import default_backend
+except ImportError:
+    Cipher = algorithms = modes = default_backend = None
 
 class VulnerableDeployment:
     def __init__(self):

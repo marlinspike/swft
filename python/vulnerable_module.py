@@ -5,14 +5,24 @@ This module intentionally contains security vulnerabilities for testing purposes
 
 import subprocess
 import pickle
-import yaml
 import os
 import tempfile
 import hashlib
 import random
 import sqlite3
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
+
+# Import YAML safely to avoid import errors if not installed
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+# Import cryptography safely
+try:
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.backends import default_backend
+except ImportError:
+    Cipher = algorithms = modes = default_backend = None
 
 class VulnerableClass:
     """Class with multiple security vulnerabilities"""
@@ -47,7 +57,10 @@ class VulnerableClass:
     def yaml_load_vuln(self, yaml_data):
         """Vulnerable YAML loading"""
         # CWE-502: Using unsafe yaml.load
-        return yaml.load(yaml_data)
+        if yaml:
+            return yaml.load(yaml_data, Loader=yaml.Loader)  # Unsafe loader
+        else:
+            return "YAML not available"
     
     def weak_crypto(self, data):
         """Using weak cryptographic algorithms"""
@@ -56,13 +69,16 @@ class VulnerableClass:
         # Weak hash algorithm
         weak_hash = hashlib.md5(data.encode()).hexdigest()
         
-        # Weak encryption
-        key = b'0123456789abcdef'  # Weak key
-        iv = b'1234567890123456'   # Static IV
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        encryptor = cipher.encryptor()
-        
-        return weak_hash, encryptor.update(data.encode()) + encryptor.finalize()
+        # Weak encryption (if cryptography is available)
+        if Cipher and algorithms and modes and default_backend:
+            key = b'0123456789abcdef'  # Weak key
+            iv = b'1234567890123456'   # Static IV
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+            encryptor = cipher.encryptor()
+            encrypted = encryptor.update(data.encode()) + encryptor.finalize()
+            return weak_hash, encrypted
+        else:
+            return weak_hash, b"Cryptography not available"
     
     def path_traversal_vuln(self, filename):
         """Vulnerable to path traversal"""
