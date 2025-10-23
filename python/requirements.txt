@@ -8,7 +8,7 @@ pytest>=8.3.4
 pytest-cov>=4.1.0
 httpx>=0.23.0
 requests==2.25.1       # CVE-2022-30767
-pillow==8.3.2          # CVE-2022-22817
+pillow==9.0.0          # CVE-2022-22817 (uses pre-built wheels)
 pyyaml==5.3.1          # CVE-2020-14343
 cryptography==3.4.8    # CVE-2022-3602
 django==3.1.14        # CVE-2021-35042

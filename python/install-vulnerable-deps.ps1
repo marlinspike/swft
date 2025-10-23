@@ -20,31 +20,52 @@ try {
     Write-Host "Installing packages individually to handle conflicts..." -ForegroundColor Yellow
     
     # Core dependencies first
+    Write-Host "Installing core dependencies..." -ForegroundColor Cyan
     python -m pip install "python-dotenv>=1.0.0"
     python -m pip install "pytest>=8.3.4"
     python -m pip install "pytest-cov>=4.1.0"
     python -m pip install "httpx>=0.23.0"
     
     # Install Jinja2 first (required by Flask)
+    Write-Host "Installing Jinja2..." -ForegroundColor Cyan
     python -m pip install "jinja2==2.11.0"
     
     # Install Flask that's compatible with Jinja2 2.x
+    Write-Host "Installing Flask and Werkzeug..." -ForegroundColor Cyan
     python -m pip install "flask==1.1.4"
     python -m pip install "werkzeug==1.0.1"
     
-    # Install other vulnerable packages
-    python -m pip install "fastapi==0.68.0"
-    python -m pip install "uvicorn==0.15.0"
-    python -m pip install "pydantic==1.8.2"
-    python -m pip install "requests==2.25.1"
-    python -m pip install "pillow==8.3.2"
-    python -m pip install "pyyaml==5.3.1"
-    python -m pip install "cryptography==3.4.8"
-    python -m pip install "django==3.1.14"
-    python -m pip install "click==7.1.2"
-    python -m pip install "urllib3==1.26.5"
-    python -m pip install "setuptools==65.5.0"
-    python -m pip install "wheel==0.37.1"
+    # Install other vulnerable packages with error handling
+    $packages = @(
+        @{name="fastapi"; version="0.68.0"},
+        @{name="uvicorn"; version="0.15.0"},
+        @{name="pydantic"; version="1.8.2"},
+        @{name="requests"; version="2.25.1"},
+        @{name="pyyaml"; version="5.3.1"},
+        @{name="cryptography"; version="3.4.8"},
+        @{name="django"; version="3.1.14"},
+        @{name="click"; version="7.1.2"},
+        @{name="urllib3"; version="1.26.5"},
+        @{name="setuptools"; version="65.5.0"},
+        @{name="wheel"; version="0.37.1"}
+    )
+    
+    foreach ($pkg in $packages) {
+        try {
+            Write-Host "Installing $($pkg.name)==$($pkg.version)..." -ForegroundColor Cyan
+            python -m pip install "$($pkg.name)==$($pkg.version)"
+        } catch {
+            Write-Host "Failed to install $($pkg.name), skipping..." -ForegroundColor Red
+        }
+    }
+    
+    # Try Pillow with --only-binary to avoid compilation
+    try {
+        Write-Host "Installing Pillow (pre-built wheel only)..." -ForegroundColor Cyan
+        python -m pip install "pillow==9.0.0" --only-binary=pillow
+    } catch {
+        Write-Host "Pillow installation failed, skipping..." -ForegroundColor Red
+    }
 }
 
 Write-Host "`n=== INSTALLATION COMPLETE ===" -ForegroundColor Green

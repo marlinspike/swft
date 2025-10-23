@@ -1,0 +1,26 @@
+# Simplified vulnerable dependencies for CVE testing
+# These packages install easily and contain known vulnerabilities
+
+# Essential vulnerable packages
+fastapi==0.68.0        # CVE-2021-32677
+uvicorn==0.15.0        # Multiple CVEs  
+jinja2==2.11.0         # CVE-2020-28493
+pydantic==1.8.2        # CVE-2021-29510
+requests==2.25.1       # CVE-2021-33503
+urllib3==1.26.5       # CVE-2021-33503
+click==7.1.2           # CVE-2022-42969
+
+# Web frameworks (vulnerable versions)
+flask==1.1.4          # CVE-2023-30861
+werkzeug==1.0.1       # CVE-2023-25577
+django==3.1.14        # CVE-2021-35042
+
+# Build tools with vulnerabilities
+setuptools==65.5.0    # CVE-2024-6345
+wheel==0.37.1         # Related vulnerabilities
+
+# Core dependencies (safe versions)
+python-dotenv>=1.0.0
+pytest>=8.3.4
+pytest-cov>=4.1.0
+httpx>=0.23.0
