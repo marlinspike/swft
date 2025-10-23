@@ -1,5 +1,6 @@
 # -------- 1) Builder stage (Vulnerable base image) --------
-FROM python:3.8-alpine AS builder  # Using older Python version with CVEs
+# Using older Python version with CVEs
+FROM python:3.8-alpine AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -24,7 +25,8 @@ RUN python -m pip install --upgrade pip setuptools wheel \
  && pip wheel --no-cache-dir -r requirements.txt -w /wheels
 
 # -------- 2) Runtime stage (Vulnerable Alpine) --------
-FROM python:3.8-alpine AS runtime  # Using older Python version
+# Using older Python version
+FROM python:3.8-alpine AS runtime
 
 # Runtime stage: copy wheels only and install with no cache
 ENV PYTHONDONTWRITEBYTECODE=1 \
