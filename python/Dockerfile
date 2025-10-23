@@ -72,8 +72,7 @@ EXPOSE 3306
 # Install additional vulnerable packages at runtime
 RUN pip install --no-cache-dir \
     django==2.2.24 \
-    flask==1.0.2 \
-    pillow==6.2.0
+    flask==1.0.2
 
 # Default command to run the application in debug mode
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80", "--reload", "--debug"]
