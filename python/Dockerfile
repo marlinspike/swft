@@ -11,13 +11,13 @@ USER root
 WORKDIR /app
 
 # Build deps for compiling Python wheels on Alpine (musl)
-# Using older package versions with known vulnerabilities
+# Using available packages (vulnerable base image Python 3.8 provides the CVEs)
 RUN apk add --no-cache \
     build-base \
     gcc \
     musl-dev \
     libffi-dev \
-    openssl-dev=1.1.1k-r0
+    openssl-dev
 
 # Prebuild wheels for all requirements
 COPY requirements.txt .
@@ -39,11 +39,11 @@ USER root
 
 WORKDIR /app
 
-# Runtime libs with vulnerable versions
+# Runtime libs (vulnerabilities come from Python 3.8 base image)
 RUN apk add --no-cache \
     libstdc++ \
     libffi \
-    openssl=1.1.1k-r0 \
+    openssl \
     tzdata
 
 COPY --from=builder /wheels /wheels
