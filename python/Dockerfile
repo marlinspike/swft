@@ -64,8 +64,10 @@ RUN echo "sensitive data" > /app/files/secret.txt
 
 # Expose port 80 and additional vulnerable ports
 EXPOSE 80
-EXPOSE 22  # SSH port exposed
-EXPOSE 3306  # MySQL port exposed
+# SSH port exposed (security vulnerability)
+EXPOSE 22
+# MySQL port exposed (security vulnerability)  
+EXPOSE 3306
 
 # Install additional vulnerable packages at runtime
 RUN pip install --no-cache-dir \
