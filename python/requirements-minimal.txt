@@ -1,11 +1,11 @@
-# Minimal vulnerable dependencies that install without build issues
-# These packages are guaranteed to install and contain known CVEs
+# Working vulnerable dependencies for Python 3.11
+# These packages work together and contain known CVEs
 
-fastapi==0.68.0        # CVE-2021-32677
+fastapi==0.70.0        # CVE-2021-32677 (compatible with Pydantic 1.x)
 uvicorn==0.15.0        # Multiple CVEs
 jinja2==2.11.0         # CVE-2020-28493
 markupsafe==1.1.1     # CVE-2019-14853
-pydantic==1.8.2        # CVE-2021-29510
+pydantic==1.10.2       # CVE-2021-29510 (compatible with FastAPI 0.70)
 requests==2.25.1       # CVE-2021-33503
 urllib3==1.26.5       # CVE-2021-33503
 flask==1.1.4          # CVE-2023-30861

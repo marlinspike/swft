@@ -6,12 +6,12 @@ cd /d "c:\Dev\scai\python"
 echo Upgrading pip...
 python -m pip install --upgrade pip
 
-echo Installing core vulnerable packages...
-python -m pip install fastapi==0.68.0
+echo Installing core vulnerable packages (Python 3.11 compatible)...
+python -m pip install fastapi==0.70.0
 python -m pip install jinja2==2.11.0
 python -m pip install markupsafe==1.1.1
 python -m pip install flask==1.1.4
-python -m pip install pydantic==1.8.2
+python -m pip install pydantic==1.10.2
 python -m pip install requests==2.25.1
 python -m pip install urllib3==1.26.5
 python -m pip install uvicorn==0.15.0

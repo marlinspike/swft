@@ -1,12 +1,12 @@
 # Simplified vulnerable dependencies for CVE testing
 # These packages install easily and contain known vulnerabilities
 
-# Essential vulnerable packages
-fastapi==0.68.0        # CVE-2021-32677
+# Essential vulnerable packages (Python 3.11 compatible)
+fastapi==0.70.0        # CVE-2021-32677
 uvicorn==0.15.0        # Multiple CVEs  
 jinja2==2.11.0         # CVE-2020-28493
 markupsafe==1.1.1     # CVE-2019-14853 (required by Jinja2)
-pydantic==1.8.2        # CVE-2021-29510
+pydantic==1.10.2       # CVE-2021-29510 (compatible version)
 requests==2.25.1       # CVE-2021-33503
 urllib3==1.26.5       # CVE-2021-33503
 click==7.1.2           # CVE-2022-42969

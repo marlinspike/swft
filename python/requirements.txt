@@ -1,9 +1,9 @@
-# Vulnerable dependencies for CVE testing (no build dependencies)
-fastapi==0.68.0        # CVE-2021-32677
+# Vulnerable dependencies for CVE testing (Python 3.11 compatible)
+fastapi==0.70.0        # CVE-2021-32677 (compatible version)
 uvicorn==0.15.0        # Multiple CVEs
 jinja2==2.11.0         # CVE-2020-28493
 python-dotenv>=1.0.0
-pydantic==1.8.2        # CVE-2021-29510
+pydantic==1.10.2       # CVE-2021-29510 (compatible with FastAPI)
 pytest>=8.3.4
 pytest-cov>=4.1.0
 httpx>=0.23.0
