@@ -12,10 +12,24 @@ Modify the workflow to:
 
 ## Changes needed in .github/workflows/deploy.yml:
 
-### Option 1: Make Quality Gate non-blocking (Recommended)
-Replace the "SonarQube Quality Gate" step with:
+### Option 1: Fix working directory and make Quality Gate non-blocking (Recommended)
+Replace both the "SonarQube Scan" and "SonarQube Quality Gate" steps with:
 
 ```yaml
+- name: SonarQube Scan
+  uses: sonarsource/sonarqube-scan-action@master
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  with:
+    projectBaseDir: ./  # Scan from repository root
+    args: >
+      -Dsonar.projectKey=swft-python
+      -Dsonar.sources=python/app,python/vulnerable_module.py,python/vulnerable_deploy.py
+      -Dsonar.tests=python/tests
+      -Dsonar.python.coverage.reportPaths=python/coverage.xml
+      -Dsonar.qualitygate.wait=false
+
 - name: SonarQube Quality Gate (Non-blocking for testing)
   uses: SonarSource/sonarqube-quality-gate-action@v1
   timeout-minutes: 15
@@ -37,7 +51,19 @@ Replace the "SonarQube Quality Gate" step with:
     echo "- Bugs: Insecure deserialization, path traversal"
 ```
 
-### Option 2: Skip Quality Gate entirely
+### Option 2: Simple fix - Remove SONAR_SCANNER_OPTS and use default settings
+Replace the SonarQube Scan step with:
+
+```yaml
+- name: SonarQube Scan
+  uses: sonarsource/sonarqube-scan-action@master
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  # Remove the SONAR_SCANNER_OPTS line entirely - let it use default project settings
+```
+
+### Option 3: Skip Quality Gate entirely
 Replace the quality gate step with:
 
 ```yaml
