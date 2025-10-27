@@ -209,45 +209,50 @@ jobs:
           category: "security"  # label for SARIF results
 
       # Export CodeQL database and SARIF results
-      - name: Export CodeQL Database and SARIF
+      - name: Export CodeQL Databases and SARIF
         if: always()
         run: |
           set -euo pipefail
-          echo "=== Exporting CodeQL Database and SARIF ==="
+          echo "=== Exporting CodeQL Databases and SARIF ==="
 
           CODEQL_CLI="/opt/codeql/codeql"
           echo "🔍 Using CodeQL CLI at: $CODEQL_CLI"
           $CODEQL_CLI --version
 
-          # Locate the Python CodeQL database
+          # Base folder where CodeQL stores databases
           DB_BASE="/home/scai/actions-runner/_work/_temp/codeql_databases"
-          DB_PATH=$(find "$DB_BASE" -type d -name "python" | head -n 1)
-
-          if [ -z "$DB_PATH" ]; then
-            echo "❌ Could not find Python CodeQL database"
-            exit 1
-          fi
-          echo "✅ Found Python CodeQL database at: $DB_PATH"
-
-          # Export directory
           EXPORT_DIR="codeql-export"
           mkdir -p "$EXPORT_DIR"
 
-          # Bundle database
-          DB_BUNDLE="$EXPORT_DIR/codeql-database-python.tar.gz"
-          echo "📦 Creating CodeQL database bundle..."
-          $CODEQL_CLI database bundle --output="$DB_BUNDLE" "$DB_PATH"
-          echo "✅ Database exported to: $DB_BUNDLE"
+          # Find all language-specific databases
+          LANG_DB_FOLDERS=$(find "$DB_BASE" -mindepth 1 -maxdepth 2 -type d)
+          if [ -z "$LANG_DB_FOLDERS" ]; then
+            echo "❌ No CodeQL language databases found"
+            exit 1
+          fi
 
-          # Copy SARIF results
-          SARIF_FILES=$(find "$DB_PATH" -name "*.sarif")
-          for f in $SARIF_FILES; do
-            cp "$f" "$EXPORT_DIR/" && echo "📄 Copied SARIF file: $f"
+          for DB_PATH in $LANG_DB_FOLDERS; do
+            LANG_NAME=$(basename "$DB_PATH")
+            DB_BUNDLE="$EXPORT_DIR/codeql-database-$LANG_NAME.tar.gz"
+            echo "📦 Bundling database for language '$LANG_NAME'..."
+            if $CODEQL_CLI database bundle --output="$DB_BUNDLE" "$DB_PATH"; then
+              echo "✅ Database bundled: $DB_BUNDLE"
+            else
+              echo "⚠️ Skipping $DB_PATH: not a valid CodeQL database"
+              continue
+            fi
+
+            # Copy SARIF files if present
+            SARIF_FILES=$(find "$DB_PATH" -name "*.sarif")
+            for f in $SARIF_FILES; do
+              cp "$f" "$EXPORT_DIR/"
+              echo "📄 Copied SARIF file: $f"
+            done
           done
 
-          echo "📂 Exported files:"
+          echo "📂 Exported files in $EXPORT_DIR:"
           ls -la "$EXPORT_DIR"
-          echo "📊 Database size: $(du -h "$DB_BUNDLE")"
+
 
       # === DOCKER BUILD & DEPLOY (uses same Azure auth) ===
 
