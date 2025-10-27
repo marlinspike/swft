@@ -241,14 +241,20 @@ jobs:
               echo "⚠️ Skipping $DB_PATH: not a valid CodeQL database"
               continue
             fi
+          done
 
-            # Copy SARIF files if present
-            SARIF_FILES=$(find "$DB_PATH" -name "*.sarif")
+          # Copy SARIF result files from CodeQL analyze output
+          SARIF_SRC_DIR="${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR:-$GITHUB_WORKSPACE}"
+          echo "🔍 Searching for SARIF files in $SARIF_SRC_DIR"
+          SARIF_FILES=$(find "$SARIF_SRC_DIR" -name "*.sarif")
+          if [ -z "$SARIF_FILES" ]; then
+            echo "⚠️ No SARIF files found in $SARIF_SRC_DIR"
+          else
             for f in $SARIF_FILES; do
               cp "$f" "$EXPORT_DIR/"
               echo "📄 Copied SARIF file: $f"
             done
-          done
+          fi
 
           echo "📂 Exported files in $EXPORT_DIR:"
           ls -la "$EXPORT_DIR"
