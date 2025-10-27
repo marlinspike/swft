@@ -198,7 +198,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: python
-          source-root: python
+          source-root: .  # adjust if your code is in a subfolder
 
       - name: Autobuild (CodeQL)
         uses: github/codeql-action/autobuild@v3
@@ -206,50 +206,53 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:python"
+          category: "security"  # label for SARIF results
 
-      # Export CodeQL database for later querying
-      - name: Export CodeQL Database
+      # Export CodeQL database and SARIF results
+      - name: Export CodeQL Database and SARIF
         if: always()
         run: |
           set -euo pipefail
-          echo "=== Exporting CodeQL Database ==="
-          
-          # Use existing CodeQL CLI installation
+          echo "=== Exporting CodeQL Database and SARIF ==="
+
+          # Use CodeQL CLI
           CODEQL_CLI="/opt/codeql/codeql"
           echo "🔍 Using CodeQL CLI at: $CODEQL_CLI"
           $CODEQL_CLI --version
-          
-          # Find the CodeQL database directory
-          DB_PATH="${{ runner.temp }}/codeql_databases/python"
-          if [ ! -d "$DB_PATH" ]; then
-            # Alternative paths where CodeQL might store the database
-            DB_PATH="${GITHUB_WORKSPACE}/.github/codeql/databases/python"
+
+          # Detect CodeQL database path dynamically
+          DB_PATH=$(find "${{ runner.temp }}" -name "*codeql*" -type d | head -n 1)
+          if [ -z "$DB_PATH" ]; then
+            echo "❌ Could not find CodeQL database"
+            exit 1
           fi
-          
-          if [ -d "$DB_PATH" ]; then
-            echo "✅ Found CodeQL database at: $DB_PATH"
-            
-            # Create export directory
-            mkdir -p codeql-export
-            
-            # Export database as compressed archive using CodeQL CLI
-            echo "📦 Creating database bundle using CodeQL CLI..."
-            $CODEQL_CLI database bundle --output="codeql-export/codeql-database-python.tar.gz" "$DB_PATH"
-            
-            echo "✅ CodeQL database exported to: codeql-export/codeql-database-python.tar.gz"
-            ls -la codeql-export/
-            echo "📊 Archive size: $(du -h codeql-export/codeql-database-python.tar.gz)"
+          echo "✅ Found CodeQL database at: $DB_PATH"
+
+          # Create export directory
+          EXPORT_DIR="codeql-export"
+          mkdir -p "$EXPORT_DIR"
+
+          # Export database
+          DB_BUNDLE="$EXPORT_DIR/codeql-database-python.tar.gz"
+          echo "📦 Creating CodeQL database bundle..."
+          $CODEQL_CLI database bundle --output="$DB_BUNDLE" "$DB_PATH"
+          echo "✅ Database exported to: $DB_BUNDLE"
+
+          # Copy SARIF result files from runner
+          SARIF_FILES=$(find "$DB_PATH" -name "*.sarif")
+          if [ -z "$SARIF_FILES" ]; then
+            echo "⚠️ No SARIF files found in $DB_PATH"
           else
-            echo "⚠️ CodeQL database not found at expected locations"
-            echo "Searching for CodeQL databases..."
-            find "${{ runner.temp }}" -name "*codeql*" -type d 2>/dev/null || true
-            find "$GITHUB_WORKSPACE" -name "*codeql*" -type d 2>/dev/null || true
-            
-            # List contents of runner temp to help debug
-            echo "📂 Contents of runner temp:"
-            ls -la "${{ runner.temp }}/" 2>/dev/null || true
+            for f in $SARIF_FILES; do
+              cp "$f" "$EXPORT_DIR/"
+              echo "📄 Copied SARIF file: $f"
+            done
           fi
+
+          # Show exported files
+          echo "📂 Exported files:"
+          ls -la "$EXPORT_DIR"
+          echo "📊 Database size: $(du -h "$DB_BUNDLE")"
 
       # === DOCKER BUILD & DEPLOY (uses same Azure auth) ===
 
