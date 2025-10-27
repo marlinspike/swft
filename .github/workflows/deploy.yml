@@ -215,41 +215,36 @@ jobs:
           set -euo pipefail
           echo "=== Exporting CodeQL Database and SARIF ==="
 
-          # Use CodeQL CLI
           CODEQL_CLI="/opt/codeql/codeql"
           echo "🔍 Using CodeQL CLI at: $CODEQL_CLI"
           $CODEQL_CLI --version
 
-          # Detect CodeQL database path dynamically
-          DB_PATH=$(find "${{ runner.temp }}" -name "*codeql*" -type d | head -n 1)
+          # Locate the Python CodeQL database
+          DB_BASE="/home/scai/actions-runner/_work/_temp/codeql_databases"
+          DB_PATH=$(find "$DB_BASE" -type d -name "python" | head -n 1)
+
           if [ -z "$DB_PATH" ]; then
-            echo "❌ Could not find CodeQL database"
+            echo "❌ Could not find Python CodeQL database"
             exit 1
           fi
-          echo "✅ Found CodeQL database at: $DB_PATH"
+          echo "✅ Found Python CodeQL database at: $DB_PATH"
 
-          # Create export directory
+          # Export directory
           EXPORT_DIR="codeql-export"
           mkdir -p "$EXPORT_DIR"
 
-          # Export database
+          # Bundle database
           DB_BUNDLE="$EXPORT_DIR/codeql-database-python.tar.gz"
           echo "📦 Creating CodeQL database bundle..."
           $CODEQL_CLI database bundle --output="$DB_BUNDLE" "$DB_PATH"
           echo "✅ Database exported to: $DB_BUNDLE"
 
-          # Copy SARIF result files from runner
+          # Copy SARIF results
           SARIF_FILES=$(find "$DB_PATH" -name "*.sarif")
-          if [ -z "$SARIF_FILES" ]; then
-            echo "⚠️ No SARIF files found in $DB_PATH"
-          else
-            for f in $SARIF_FILES; do
-              cp "$f" "$EXPORT_DIR/"
-              echo "📄 Copied SARIF file: $f"
-            done
-          fi
+          for f in $SARIF_FILES; do
+            cp "$f" "$EXPORT_DIR/" && echo "📄 Copied SARIF file: $f"
+          done
 
-          # Show exported files
           echo "📂 Exported files:"
           ls -la "$EXPORT_DIR"
           echo "📊 Database size: $(du -h "$DB_BUNDLE")"
