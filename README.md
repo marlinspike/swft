@@ -137,7 +137,6 @@ make frontend-build    # production bundle
 make lint              # run ruff on backend
 ```
 
-`dev_plan.md` captures the long-term backlog and architecture decisions.
 
 ## Testing
 
