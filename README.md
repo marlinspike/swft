@@ -149,6 +149,10 @@ python -m pytest
 
 Frontend tests are not yet wired; add Playwright or Vitest as needs evolve.
 
+## Future Direction
+
+See `dev-plan.md` for phased roadmap details covering integration work, operations hardening, and long-term feature backlog (AI-assisted insights, reporting, additional artifact ingestion, and more). Contributions can target the next open items in Phases 3–5 to extend portal capabilities.
+
 ## License
 
 MIT License
