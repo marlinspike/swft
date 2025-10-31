@@ -1,9 +1,10 @@
 
+
 # Custom
 azure-credentials.json
 .note.md
 *.ignore
-
+.plan.md
 
 # Python-generated files
 __pycache__/

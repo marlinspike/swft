@@ -1,0 +1,21 @@
+{
+  "id": "100",
+  "projectName": "demo",
+  "createdAt": "2024-07-16T12:00:00Z",
+  "assessment": {
+    "cosign": {
+      "verifyStatus": "passed"
+    },
+    "trivy": {
+      "findings": {
+        "total": 5,
+        "failSet": 1
+      }
+    }
+  },
+  "deployment": {
+    "aci": {
+      "url": "http://example.com"
+    }
+  }
+}
