@@ -1,0 +1,10 @@
+{
+  "Results": [
+    {
+      "Target": "app",
+      "Vulnerabilities": [
+        { "VulnerabilityID": "CVE-123", "Severity": "CRITICAL" }
+      ]
+    }
+  ]
+}

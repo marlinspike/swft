@@ -1,0 +1,7 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "components": [
+    { "name": "fastapi", "version": "0.115.0" }
+  ]
+}
