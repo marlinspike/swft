@@ -6,6 +6,7 @@ azure-credentials.json
 *.ignore
 .plan.md
 .env
+.DS_Store
 
 # Python-generated files
 __pycache__/

@@ -62,6 +62,17 @@ The UI provides:
 - Project dashboard with latest run timestamps
 - Per-project run tables summarizing cosign status and Trivy finding counts
 - Run detail views with metadata, artifact listings, and inline JSON viewers
+- Light/Dark mode theme toggle with persisted preference
+
+#### UI Preview
+
+| View | Description | Screenshot |
+|------|-------------|------------|
+| Projects | Numbered list of projects with sortable columns | ![Projects view](images/1_Projects.png) |
+| Runs | Workflow runs for a selected project | ![Project runs](images/10_Runs.png) |
+| Dashboard | Detailed run dashboard summarising metadata, SBOM, and Trivy results | ![Run dashboard](images/20_Dashboard.png) |
+| Raw JSON | Modal viewer for raw artifact payloads (run, SBOM, Trivy) | ![Raw JSON modal](images/21_Dashboard.png) |
+| Vulnerability Scan | Trivy severity summary and ranked findings | ![Trivy findings](images/30_Dashboard.png) |
 
 ### Sample FastAPI Workload
 
