@@ -35,11 +35,16 @@ type TrivySummary = {
 
 const severityOrder = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"];
 const severityColors: Record<string, string> = {
-  CRITICAL: "bg-rose-500/20 text-rose-300 border border-rose-500/40",
-  HIGH: "bg-orange-500/20 text-orange-200 border border-orange-500/40",
-  MEDIUM: "bg-amber-500/20 text-amber-200 border border-amber-500/40",
-  LOW: "bg-emerald-500/20 text-emerald-200 border border-emerald-500/40",
-  UNKNOWN: "bg-slate-600/30 text-slate-200 border border-slate-600/40"
+  CRITICAL:
+    "border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/20 dark:text-rose-200",
+  HIGH:
+    "border border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/20 dark:text-orange-200",
+  MEDIUM:
+    "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200",
+  LOW:
+    "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-200",
+  UNKNOWN:
+    "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600/40 dark:bg-slate-600/30 dark:text-slate-200"
 };
 
 const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
@@ -134,15 +139,15 @@ const SeverityBadge = ({ severity, count }: { severity: string; count?: number }
     <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${style}`}>
       <span>{severity}</span>
       {typeof count === "number" && (
-        <span className="text-slate-100">{count}</span>
+        <span className="text-slate-900 dark:text-slate-100">{count}</span>
       )}
     </span>
   );
 };
 
 const TypeBadge = ({ label, count }: { label: string; count: number }) => (
-  <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-xs font-medium text-slate-200">
-    <span className="uppercase tracking-wide text-slate-400">{label}</span>
+  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+    <span className="uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
     <span>{count}</span>
   </span>
 );
@@ -150,49 +155,49 @@ const TypeBadge = ({ label, count }: { label: string; count: number }) => (
 const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
   <div className="space-y-6">
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-5">
-        <p className="text-sm text-blue-200">Total components</p>
-        <p className="mt-2 text-3xl font-semibold text-white">{summary.totalComponents}</p>
+      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-5 dark:border-blue-500/30 dark:bg-blue-500/10">
+        <p className="text-sm text-blue-700 dark:text-blue-200">Total components</p>
+        <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.totalComponents}</p>
       </div>
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-5">
-        <p className="text-sm text-emerald-200">Unique component types</p>
-        <p className="mt-2 text-3xl font-semibold text-white">{summary.uniqueTypes}</p>
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-5 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+        <p className="text-sm text-emerald-700 dark:text-emerald-200">Unique component types</p>
+        <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueTypes}</p>
       </div>
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-5">
-        <p className="text-sm text-amber-200">Referenced licenses</p>
-        <p className="mt-2 text-3xl font-semibold text-white">{summary.uniqueLicenses}</p>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 dark:border-amber-500/30 dark:bg-amber-500/10">
+        <p className="text-sm text-amber-700 dark:text-amber-200">Referenced licenses</p>
+        <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueLicenses}</p>
       </div>
     </div>
     <div className="space-y-3">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Component types</h4>
+      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Component types</h4>
       <div className="flex flex-wrap gap-2">
         {summary.typeBreakdown.length === 0 ? (
-          <span className="text-sm text-slate-400">No component type data available.</span>
+          <span className="text-sm text-slate-500 dark:text-slate-400">No component type data available.</span>
         ) : (
           summary.typeBreakdown.map((item) => <TypeBadge key={item.label} label={item.label} count={item.count} />)
         )}
       </div>
     </div>
     <div className="space-y-3">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Highlighted components</h4>
+      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Highlighted components</h4>
       {summary.topComponents.length === 0 ? (
-        <p className="text-sm text-slate-400">No component details recorded.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">No component details recorded.</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-800">
-          <table className="min-w-full divide-y divide-slate-800">
-            <thead className="bg-slate-900/70">
+        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+            <thead className="bg-slate-100 dark:bg-slate-900/70">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Version</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Version</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-900 bg-slate-950/40">
+            <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
               {summary.topComponents.map((component) => (
-                <tr key={`${component.name}-${component.version}`} className="hover:bg-slate-900/60">
-                  <td className="px-4 py-3 text-sm text-slate-100">{component.name}</td>
-                  <td className="px-4 py-3 text-sm text-slate-300">{component.version}</td>
-                  <td className="px-4 py-3 text-sm uppercase text-slate-400">{component.type}</td>
+                <tr key={`${component.name}-${component.version}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
+                  <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">{component.name}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{component.version}</td>
+                  <td className="px-4 py-3 text-sm uppercase text-slate-500 dark:text-slate-400">{component.type}</td>
                 </tr>
               ))}
             </tbody>
@@ -203,60 +208,76 @@ const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
   </div>
 );
 
-const TrivySummaryView = ({ summary }: { summary: TrivySummary }) => (
-  <div className="space-y-6">
-    <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-5">
-      <p className="text-sm text-rose-200">Total findings</p>
-      <p className="mt-2 text-3xl font-semibold text-white">{summary.totalFindings}</p>
-    </div>
-    <div className="flex flex-wrap gap-2">
-      {summary.severityCounts.length === 0 ? (
-        <span className="text-sm text-slate-400">No vulnerabilities detected.</span>
-      ) : (
-        summary.severityCounts.map((item) => <SeverityBadge key={item.severity} severity={item.severity} count={item.count} />)
-      )}
-    </div>
-    <div className="space-y-3">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Top findings</h4>
-      {summary.topFindings.length === 0 ? (
-        <p className="text-sm text-slate-400">No vulnerabilities reported in the selected severities.</p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-800">
-          <table className="min-w-full divide-y divide-slate-800">
-            <thead className="bg-slate-900/70">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Severity</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Vulnerability</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Package</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Fixed version</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Target</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-900 bg-slate-950/40">
-              {summary.topFindings.map((finding) => (
-                <tr key={`${finding.id}-${finding.packageName}`} className="hover:bg-slate-900/60">
-                  <td className="px-4 py-3 text-sm font-semibold uppercase text-slate-100">
-                    <SeverityBadge severity={finding.severity} />
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-100">
-                    <p className="font-medium">{finding.id}</p>
-                    <p className="text-xs text-slate-400">{finding.title}</p>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-300">
-                    <p className="font-medium text-slate-100">{finding.packageName}</p>
-                    <p className="text-xs text-slate-500">Installed: {finding.installedVersion}</p>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-300">{finding.fixedVersion}</td>
-                  <td className="px-4 py-3 text-sm text-slate-400">{finding.target}</td>
+const TrivySummaryView = ({ summary }: { summary: TrivySummary }) => {
+  const hasNoFindings = summary.totalFindings === 0;
+  const borderColor = hasNoFindings
+    ? "border-emerald-300 dark:border-emerald-500/40"
+    : "border-rose-300 dark:border-rose-500/40";
+  const backgroundColor = hasNoFindings
+    ? "bg-emerald-50 dark:bg-emerald-500/10"
+    : "bg-rose-50 dark:bg-rose-500/10";
+  const labelColor = hasNoFindings
+    ? "text-emerald-700 dark:text-emerald-200"
+    : "text-rose-700 dark:text-rose-200";
+  const valueColor = hasNoFindings
+    ? "text-emerald-900 dark:text-white"
+    : "text-rose-900 dark:text-white";
+
+  return (
+    <div className="space-y-6">
+      <div className={`rounded-xl border px-4 py-5 ${borderColor} ${backgroundColor}`}>
+        <p className={`text-sm ${labelColor}`}>Total findings</p>
+        <p className={`mt-2 text-3xl font-semibold ${valueColor}`}>{summary.totalFindings}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {summary.severityCounts.length === 0 ? (
+          <span className="text-sm text-slate-500 dark:text-slate-400">No vulnerabilities detected.</span>
+        ) : (
+          summary.severityCounts.map((item) => <SeverityBadge key={item.severity} severity={item.severity} count={item.count} />)
+        )}
+      </div>
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Top findings</h4>
+        {summary.topFindings.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No vulnerabilities reported in the selected severities.</p>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+              <thead className="bg-slate-100 dark:bg-slate-900/70">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Severity</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Vulnerability</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Fixed version</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Target</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
+                {summary.topFindings.map((finding) => (
+                  <tr key={`${finding.id}-${finding.packageName}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
+                    <td className="px-4 py-3 text-sm font-semibold uppercase text-slate-900 dark:text-slate-100">
+                      <SeverityBadge severity={finding.severity} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">
+                      <p className="font-medium">{finding.id}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{finding.title}</p>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+                      <p className="font-medium text-slate-900 dark:text-slate-100">{finding.packageName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-500">Installed: {finding.installedVersion}</p>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">{finding.fixedVersion}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{finding.target}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export const RunPage = () => {
   const { projectId, runId } = useParams<{ projectId: string; runId: string }>();
@@ -331,7 +352,7 @@ export const RunPage = () => {
         <button
           type="button"
           onClick={() => setRawModal({ title: label, content })}
-          className="rounded-lg border border-blue-500/40 px-3 py-1 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:text-blue-100"
+          className="rounded-lg border border-blue-300 px-3 py-1 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-500 dark:border-blue-500/40 dark:text-blue-200 dark:hover:border-blue-400 dark:hover:text-blue-100"
         >
           View raw JSON
         </button>
@@ -361,7 +382,7 @@ export const RunPage = () => {
         ) : sbomSummary ? (
           <SbomSummaryView summary={sbomSummary} />
         ) : (
-          <p className="text-sm text-slate-400">No SBOM artifact was uploaded for this run.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">No SBOM artifact was uploaded for this run.</p>
         )}
       </CollapsibleSection>
       <CollapsibleSection
@@ -376,7 +397,7 @@ export const RunPage = () => {
         ) : trivySummary ? (
           <TrivySummaryView summary={trivySummary} />
         ) : (
-          <p className="text-sm text-slate-400">No Trivy report was captured for this run.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">No Trivy report was captured for this run.</p>
         )}
       </CollapsibleSection>
       {rawModal && <JsonModal title={rawModal.title} content={rawModal.content} onClose={() => setRawModal(null)} />}
