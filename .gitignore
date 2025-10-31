@@ -5,6 +5,7 @@ azure-credentials.json
 .note.md
 *.ignore
 .plan.md
+.env
 
 # Python-generated files
 __pycache__/
