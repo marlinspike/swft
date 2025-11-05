@@ -8,6 +8,7 @@ import { Breadcrumbs } from "@components/Breadcrumbs";
 import { RunDetailCard } from "@components/RunDetailCard";
 import { CollapsibleSection } from "@components/CollapsibleSection";
 import { JsonModal } from "@components/JsonModal";
+import { InfoPopover } from "@components/InfoPopover";
 
 type SbomSummary = {
   totalComponents: number;
@@ -66,6 +67,42 @@ const severityColors: Record<string, string> = {
   UNKNOWN:
     "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600/40 dark:bg-slate-600/30 dark:text-slate-200"
 };
+
+const infoHelp = {
+  sbom: {
+    description: "Summaries below come directly from sbom.cyclonedx.json and describe the components bundled in this container image.",
+    items: [
+      { label: "Generator", content: "Identifies the SBOM tool and version that produced this inventory so you know which engine to validate." },
+      { label: "Base image & OS", content: "Shows the parent container and operating-system component detected in the SBOM for provenance and hardening checks." },
+      { label: "Licensing alert", content: "Components missing license metadata are flagged so legal/compliance teams can review obligations before approval." },
+      { label: "Package ecosystems", content: "Highlights the package registries represented in the SBOM to focus supply-chain reviews." }
+    ]
+  },
+  trivyOverview: {
+    description: "This section reflects the findings from trivy-report.json and offers context on severity, fix availability, and package classes.",
+    items: [
+      { label: "Highest severity", content: "The most severe vulnerability detected; if blank, no issues met the scan thresholds." },
+      { label: "Fixable vs. no fix", content: "How many findings already have a patched version available versus items still waiting on a vendor fix." },
+      { label: "Latest published CVE", content: "Timestamp of the newest disclosure among the detected findings to gauge how fresh the risk landscape is." }
+    ]
+  },
+  trivyScanner: {
+    description: "Tracks which Trivy binary and vulnerability database snapshot were used so the assessment can be reproduced or audited.",
+    items: [
+      { label: "Trivy version", content: "The CLI version invoked by the workflow (from run.json)." },
+      { label: "DB updated", content: "When Trivy’s vulnerability database was last refreshed before this scan." },
+      { label: "Repo digest", content: "The immutable container digest that was scanned to tie findings back to an exact image." }
+    ]
+  },
+  trivyPolicy: {
+    description: "Pulled from run.json to show how the scan was parameterised and what triggers a pipeline failure.",
+    items: [
+      { label: "Scan severities", content: "Only vulnerabilities at these severities were included in the report." },
+      { label: "Fail-on severities", content: "Findings at these levels cause the policy to fail (subject to workflow flags)." },
+      { label: "Ignore unfixed", content: "Whether vulnerabilities without a published fix are excluded from failing the run." }
+    ]
+  }
+} as const;
 
 const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
   const components = Array.isArray(payload.components) ? payload.components : [];
@@ -283,6 +320,12 @@ const TypeBadge = ({ label, count }: { label: string; count: number }) => (
 
 const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
   <div className="space-y-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <p className="text-sm text-slate-600 dark:text-slate-300">
+        Component inventory, base image details, and license coverage derived from the uploaded SBOM.
+      </p>
+      <InfoPopover title="SBOM insights" description={infoHelp.sbom.description} items={infoHelp.sbom.items} />
+    </div>
     <div className="grid gap-4 md:grid-cols-3">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-5 dark:border-blue-500/30 dark:bg-blue-500/10">
         <p className="text-sm text-blue-700 dark:text-blue-200">Total components</p>
@@ -423,6 +466,12 @@ const TrivySummaryView = ({
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Vulnerability assessment from trivy-report.json with severity posture, fix availability, and scan policy context.
+        </p>
+        <InfoPopover title="Trivy scan insights" description={infoHelp.trivyOverview.description} items={infoHelp.trivyOverview.items} />
+      </div>
       <div className={`rounded-xl border px-4 py-5 ${borderColor} ${backgroundColor}`}>
         <p className={`text-sm ${labelColor}`}>Total findings</p>
         <p className={`mt-2 text-3xl font-semibold ${valueColor}`}>{summary.totalFindings}</p>
@@ -513,7 +562,10 @@ const TrivySummaryView = ({
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Scanner metadata</h4>
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Scanner metadata</h4>
+            <InfoPopover title="Scanner metadata" description={infoHelp.trivyScanner.description} items={infoHelp.trivyScanner.items} align="left" />
+          </div>
           <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
             <div className="flex items-center justify-between">
               <dt>Trivy version</dt>
@@ -532,7 +584,10 @@ const TrivySummaryView = ({
           </dl>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Policy context</h4>
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Policy context</h4>
+            <InfoPopover title="Policy context" description={infoHelp.trivyPolicy.description} items={infoHelp.trivyPolicy.items} align="left" />
+          </div>
           <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
             <div className="flex items-center justify-between">
               <dt>Scan severities</dt>
@@ -664,12 +719,12 @@ export const RunPage = () => {
   if (loading) return <LoadingState message={`Loading run ${runId}`} />;
   if (error || !data) return <ErrorState message={error ?? "Unable to load run detail"} />;
 
-  const renderArtifactAction = (label: string, content: string | null) =>
+  const renderArtifactAction = (label: string, content: string | null, fileName?: string) =>
     content
       ? (
         <button
           type="button"
-          onClick={() => setRawModal({ title: label, content })}
+          onClick={() => setRawModal({ title: label, content, fileName })}
           className="rounded-lg border border-blue-300 px-3 py-1 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-500 dark:border-blue-500/40 dark:text-blue-200 dark:hover:border-blue-400 dark:hover:text-blue-100"
         >
           View raw JSON
@@ -683,7 +738,13 @@ export const RunPage = () => {
       <CollapsibleSection
         title="Run overview"
         description="Execution details from the SWFT workflow and deployment output."
-        actions={runRaw ? renderArtifactAction("Run metadata (run.json)", runRaw) : null}
+        actions={runRaw && data.artifacts
+          ? renderArtifactAction(
+              "Run metadata (run.json)",
+              runRaw,
+              (data.artifacts.find((artifact) => artifact.artifact_type === "run")?.blob_name) ?? "run.json"
+            )
+          : null}
         defaultOpen
       >
         <RunDetailCard
@@ -711,7 +772,11 @@ export const RunPage = () => {
       <CollapsibleSection
         title="Software Bill of Materials (SBOM)"
         description="Component inventory captured from the container image."
-        actions={renderArtifactAction("SBOM (sbom.cyclonedx.json)", sbomRaw)}
+        actions={renderArtifactAction(
+          "SBOM (sbom.cyclonedx.json)",
+          sbomRaw,
+          (data.artifacts.find((artifact) => artifact.artifact_type === "sbom")?.blob_name) ?? "sbom.cyclonedx.json"
+        )}
       >
         {loadingArtifacts ? (
           <LoadingState message="Loading SBOM summary" />
@@ -726,7 +791,11 @@ export const RunPage = () => {
       <CollapsibleSection
         title="Vulnerability scan (Trivy)"
         description="Findings reported by Trivy across the container image."
-        actions={renderArtifactAction("Trivy report (trivy-report.json)", trivyRaw)}
+        actions={renderArtifactAction(
+          "Trivy report (trivy-report.json)",
+          trivyRaw,
+          (data.artifacts.find((artifact) => artifact.artifact_type === "trivy")?.blob_name) ?? "trivy-report.json"
+        )}
       >
         {loadingArtifacts ? (
           <LoadingState message="Loading Trivy report" />
