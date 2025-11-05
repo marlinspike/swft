@@ -73,7 +73,7 @@ The UI provides:
 | Dashboard | Detailed run dashboard summarising metadata, SBOM, and Trivy results | ![Run dashboard](images/20_Dashboard.png) |
 | Raw JSON | Modal viewer for raw artifact payloads (run, SBOM, Trivy) | ![Raw JSON modal](images/21_Dashboard.png) |
 | Vulnerability Scan | Trivy severity summary and ranked findings | ![Trivy findings](images/30_Dashboard.png) |
-| Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Dashboard.png) |
+| Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Popup.png) |
 
 ### Sample FastAPI Workload
 
