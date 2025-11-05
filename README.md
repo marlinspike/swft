@@ -126,6 +126,27 @@ Outputs persisted per run:
 - `run.json` (portal metadata contract)
 - `aci-endpoint.txt`
 
+## CodeQL Static Analysis
+
+Enable GitHub code scanning to add static application security testing (SAST) alongside the container pipeline:
+
+1. In GitHub, open `Security → Code scanning alerts → Set up code scanning → CodeQL analysis` and accept the starter pull request that adds `.github/workflows/codeql.yml`.
+2. Confirm the generated `languages` matrix covers this repo—set it to `["python", "javascript-typescript"]` so both the FastAPI backend and React frontend are analyzed. You can add or remove languages at any time.
+3. If `autobuild` fails, replace it with explicit build steps. A typical customization looks like:
+
+   ```yaml
+   - run: |
+       python -m venv .venv && source .venv/bin/activate
+       pip install -e backend[dev]
+   - run: |
+       cd frontend
+       npm ci
+   - uses: github/codeql-action/analyze@v3
+   ```
+
+   Keep dependencies lightweight—install only what the analyzer needs to understand imports/types.
+
+
 ## Developer Tooling
 
 A helper `Makefile` is provided:
