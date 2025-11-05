@@ -15,6 +15,11 @@ type SbomSummary = {
   uniqueLicenses: number;
   typeBreakdown: { label: string; count: number }[];
   topComponents: { name: string; version: string; type: string }[];
+  topLicenses: { name: string; count: number }[];
+  baseImage: { name: string; version?: string; supplier?: string } | null;
+  componentsWithoutLicense: number;
+  topEcosystems: { name: string; count: number }[];
+  generator: string | null;
 };
 
 type TrivyFinding = {
@@ -31,6 +36,21 @@ type TrivySummary = {
   totalFindings: number;
   severityCounts: { severity: string; count: number }[];
   topFindings: TrivyFinding[];
+  platform: {
+    osFamily: string | null;
+    osName: string | null;
+    imageID: string | null;
+    repoDigests: string[];
+  };
+  scanner: {
+    version: string | null;
+    dbUpdatedAt: string | null;
+  };
+  highestSeverity: string | null;
+  fixableCount: number;
+  withoutFixCount: number;
+  classBreakdown: { name: string; count: number }[];
+  latestPublished: string | null;
 };
 
 const severityOrder = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"];
@@ -52,6 +72,39 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
   const typeCounts = new Map<string, number>();
   const licenseCounts = new Map<string, number>();
   const topComponents = [] as { name: string; version: string; type: string }[];
+  let baseImage: { name: string; version?: string; supplier?: string } | null = null;
+  let componentsWithoutLicense = 0;
+  const ecosystemCounts = new Map<string, number>();
+  const metadata = typeof payload.metadata === "object" && payload.metadata !== null ? (payload.metadata as Record<string, unknown>) : null;
+  const metadataComponent = metadata && typeof metadata.component === "object" && metadata.component !== null ? (metadata.component as Record<string, unknown>) : null;
+  let generator: string | null = null;
+  if (metadataComponent) {
+    const name = typeof metadataComponent.name === "string" ? metadataComponent.name : null;
+    const version = typeof metadataComponent.version === "string" ? metadataComponent.version : undefined;
+    const supplier =
+      typeof metadataComponent.supplier === "object" && metadataComponent.supplier !== null
+        ? (
+            (metadataComponent.supplier as Record<string, unknown>).name ??
+            (metadataComponent.supplier as Record<string, unknown>).url ??
+            undefined
+          )
+        : undefined;
+    if (name) {
+      baseImage = { name, version, supplier: typeof supplier === "string" ? supplier : undefined };
+    }
+  }
+  const toolsField = metadata ? (metadata as Record<string, unknown>).tools : null;
+  const metadataTools = Array.isArray(toolsField) ? toolsField : null;
+  if (metadataTools) {
+    const tool = metadataTools.find((entry) => typeof entry === "object" && entry !== null) as Record<string, unknown> | undefined;
+    if (tool) {
+      const toolName = typeof tool.name === "string" ? tool.name : null;
+      const toolVendor = typeof tool.vendor === "string" ? tool.vendor : null;
+      const toolVersion = typeof tool.version === "string" ? tool.version : null;
+      const parts = [toolVendor, toolName, toolVersion ? `v${toolVersion}` : null].filter((value): value is string => !!value);
+      generator = parts.length > 0 ? parts.join(" ") : toolName ?? null;
+    }
+  }
   for (const entry of components) {
     if (typeof entry !== "object" || entry === null) continue;
     const component = entry as Record<string, unknown>;
@@ -60,6 +113,7 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
     const type = typeof component.type === "string" ? component.type : "unknown";
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
     const licenses = Array.isArray(component.licenses) ? component.licenses : [];
+    if (licenses.length === 0) componentsWithoutLicense += 1;
     for (const lic of licenses) {
       if (typeof lic !== "object" || lic === null) continue;
       const licenseInfo = lic as Record<string, unknown>;
@@ -73,18 +127,34 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
         "Unknown";
       licenseCounts.set(licenseName, (licenseCounts.get(licenseName) ?? 0) + 1);
     }
+    const purl = typeof component.purl === "string" ? component.purl : null;
+    if (purl?.startsWith("pkg:")) {
+      const remainder = purl.slice(4);
+      const typeSegment = remainder.split("/")[0] ?? "";
+      const ecosystemType = typeSegment.split("@")[0]?.split("?")[0]?.split("#")[0] ?? "";
+      if (ecosystemType) {
+        const label = ecosystemType.toUpperCase();
+        ecosystemCounts.set(label, (ecosystemCounts.get(label) ?? 0) + 1);
+      }
+    }
     topComponents.push({ name, version, type });
   }
   const sortedTypes = Array.from(typeCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([label, count]) => ({ label, count }));
   const sortedLicenses = Array.from(licenseCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const sortedEcosystems = Array.from(ecosystemCounts.entries()).sort((a, b) => b[1] - a[1]);
   return {
     totalComponents: components.length,
     uniqueTypes: typeCounts.size,
     uniqueLicenses: licenseCounts.size,
     typeBreakdown: sortedTypes.slice(0, 5),
     topComponents: topComponents.slice(0, 8),
+    topLicenses: sortedLicenses.slice(0, 5).map(([name, count]) => ({ name, count })),
+    baseImage,
+    componentsWithoutLicense,
+    topEcosystems: sortedEcosystems.slice(0, 5).map(([name, count]) => ({ name, count })),
+    generator
   };
 };
 
@@ -92,16 +162,56 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
   const results = Array.isArray(payload.Results) ? payload.Results : [];
   const severityCounts = new Map<string, number>();
   const findings: TrivyFinding[] = [];
+  const metadata = typeof payload.Metadata === "object" && payload.Metadata !== null ? (payload.Metadata as Record<string, unknown>) : null;
+  const osInfo = metadata && typeof metadata.OS === "object" && metadata.OS !== null ? (metadata.OS as Record<string, unknown>) : null;
+  const osFamily = osInfo && typeof osInfo.Family === "string" ? osInfo.Family : null;
+  const osName = osInfo && typeof osInfo.Name === "string" ? osInfo.Name : null;
+  const imageID = metadata && typeof metadata.ImageID === "string" ? metadata.ImageID : null;
+  const repoDigests = metadata && Array.isArray(metadata.RepoDigests)
+    ? (metadata.RepoDigests as unknown[]).filter((item): item is string => typeof item === "string")
+    : [];
+  const scannerVersion = metadata && typeof metadata.Version === "string" ? metadata.Version : null;
+  const dbUpdatedAt = metadata && typeof metadata.UpdatedAt === "string" ? metadata.UpdatedAt : null;
+  const classCounts = new Map<string, number>();
+  let highestSeverity: string | null = null;
+  let highestSeverityIndex = severityOrder.length;
+  let fixableCount = 0;
+  let withoutFixCount = 0;
+  let latestPublished: string | null = null;
   for (const entry of results) {
     if (typeof entry !== "object" || entry === null) continue;
     const result = entry as Record<string, unknown>;
     const target = typeof result.Target === "string" ? result.Target : "unknown";
     const vulns = Array.isArray(result.Vulnerabilities) ? result.Vulnerabilities : [];
+    const resultClass = typeof result.Class === "string" ? result.Class : typeof result.Type === "string" ? result.Type : null;
+    if (resultClass) {
+      const label = resultClass.replace(/_/g, "-").toUpperCase();
+      classCounts.set(label, (classCounts.get(label) ?? 0) + vulns.length);
+    }
     for (const vulnEntry of vulns) {
       if (typeof vulnEntry !== "object" || vulnEntry === null) continue;
       const vuln = vulnEntry as Record<string, unknown>;
       const severity = typeof vuln.Severity === "string" ? vuln.Severity.toUpperCase() : "UNKNOWN";
       severityCounts.set(severity, (severityCounts.get(severity) ?? 0) + 1);
+      const severityIndex = severityOrder.indexOf(severity);
+      if (severityIndex !== -1 && severityIndex < highestSeverityIndex) {
+        highestSeverityIndex = severityIndex;
+        highestSeverity = severity;
+      }
+      const fixedVersion = typeof vuln.FixedVersion === "string" ? vuln.FixedVersion : "";
+      if (fixedVersion && fixedVersion !== "0" && fixedVersion !== "-" && fixedVersion !== "—" && fixedVersion.toLowerCase() !== "none") {
+        fixableCount += 1;
+      } else {
+        withoutFixCount += 1;
+      }
+      const published = typeof vuln.PublishedDate === "string" ? vuln.PublishedDate : null;
+      if (published) {
+        if (!latestPublished) {
+          latestPublished = published;
+        } else if (new Date(published).getTime() > new Date(latestPublished).getTime()) {
+          latestPublished = published;
+        }
+      }
       findings.push({
         id: typeof vuln.VulnerabilityID === "string" ? vuln.VulnerabilityID : "N/A",
         severity,
@@ -127,7 +237,26 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
   return {
     totalFindings: findings.length,
     severityCounts: sortedSeverity,
-    topFindings: rankedFindings
+    topFindings: rankedFindings,
+    platform: {
+      osFamily,
+      osName,
+      imageID,
+      repoDigests
+    },
+    scanner: {
+      version: scannerVersion,
+      dbUpdatedAt
+    },
+    highestSeverity,
+    fixableCount,
+    withoutFixCount,
+    classBreakdown: Array.from(classCounts.entries())
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }))
+      .slice(0, 5),
+    latestPublished
   };
 };
 
@@ -168,6 +297,11 @@ const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
         <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueLicenses}</p>
       </div>
     </div>
+    {summary.generator && (
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+        <span className="font-semibold text-slate-700 dark:text-slate-200">Generated by:</span> {summary.generator}
+      </div>
+    )}
     <div className="space-y-3">
       <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Component types</h4>
       <div className="flex flex-wrap gap-2">
@@ -205,10 +339,63 @@ const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
         </div>
       )}
     </div>
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+      <h4 className="text-sm font-semibold uppercase tracking-wide">Compliance alert</h4>
+      <p className="mt-2">
+        {summary.componentsWithoutLicense} components report no license metadata in the SBOM. Treat these as unknown obligations until they are manually reviewed.
+        {summary.totalComponents > 0 && (
+          <span> ({Math.round((summary.componentsWithoutLicense / summary.totalComponents) * 100)}% of listed components)</span>
+        )}
+      </p>
+    </div>
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Top licenses</h4>
+        {summary.topLicenses.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No license data recorded.</p>
+        ) : (
+          <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+            {summary.topLicenses.map((item) => (
+              <li key={item.name} className="flex items-center justify-between">
+                <span className="font-medium text-slate-900 dark:text-slate-100">{item.name}</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">{item.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package ecosystems</h4>
+        {summary.topEcosystems.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No package ecosystem data detected.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {summary.topEcosystems.map((item) => (
+              <span key={item.name} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                <span className="uppercase tracking-wide text-slate-500 dark:text-slate-400">{item.name}</span>
+                <span>{item.count}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   </div>
 );
 
-const TrivySummaryView = ({ summary }: { summary: TrivySummary }) => {
+const TrivySummaryView = ({
+  summary,
+  policy
+}: {
+  summary: TrivySummary;
+  policy?: {
+    scanSeverities: string | null;
+    failSeverities: string | null;
+    ignoreUnfixed: boolean | null;
+    scannerVersion: string | null;
+    scannerDbUpdatedAt: string | null;
+  } | null;
+}) => {
   const hasNoFindings = summary.totalFindings === 0;
   const borderColor = hasNoFindings
     ? "border-emerald-300 dark:border-emerald-500/40"
@@ -222,6 +409,17 @@ const TrivySummaryView = ({ summary }: { summary: TrivySummary }) => {
   const valueColor = hasNoFindings
     ? "text-emerald-900 dark:text-white"
     : "text-rose-900 dark:text-white";
+  const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString() : "—");
+  const fixablePercentage = summary.totalFindings > 0 ? Math.round((summary.fixableCount / summary.totalFindings) * 100) : 0;
+  const ignoreUnfixedLabel = policy
+    ? policy.ignoreUnfixed === null
+      ? "—"
+      : policy.ignoreUnfixed
+        ? "Yes"
+        : "No"
+    : "—";
+  const scannerVersion = summary.scanner.version ?? policy?.scannerVersion ?? null;
+  const scannerDbUpdatedAt = summary.scanner.dbUpdatedAt ?? policy?.scannerDbUpdatedAt ?? null;
 
   return (
     <div className="space-y-6">
@@ -235,6 +433,44 @@ const TrivySummaryView = ({ summary }: { summary: TrivySummary }) => {
         ) : (
           summary.severityCounts.map((item) => <SeverityBadge key={item.severity} severity={item.severity} count={item.count} />)
         )}
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Severity posture</h4>
+          <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex items-center justify-between">
+              <dt>Highest severity</dt>
+              <dd className="text-slate-900 dark:text-slate-100">{summary.highestSeverity ?? "None detected"}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Fixable findings</dt>
+              <dd>{summary.fixableCount} / {summary.totalFindings} ({fixablePercentage}%)</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>No fix available</dt>
+              <dd>{summary.withoutFixCount}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Latest published CVE</dt>
+              <dd className="text-xs text-slate-500 dark:text-slate-400">{formatDateTime(summary.latestPublished)}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package classes</h4>
+          {summary.classBreakdown.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No vulnerable package classes detected.</p>
+          ) : (
+            <ul className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+              {summary.classBreakdown.map((item) => (
+                <li key={item.name} className="flex items-center justify-between">
+                  <span className="font-medium text-slate-900 dark:text-slate-100">{item.name}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">{item.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
       <div className="space-y-3">
         <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Top findings</h4>
@@ -274,6 +510,44 @@ const TrivySummaryView = ({ summary }: { summary: TrivySummary }) => {
             </table>
           </div>
         )}
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Scanner metadata</h4>
+          <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex items-center justify-between">
+              <dt>Trivy version</dt>
+              <dd className="text-slate-900 dark:text-slate-100">{scannerVersion ?? "—"}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>DB updated</dt>
+              <dd className="text-xs text-slate-500 dark:text-slate-400">{formatDateTime(scannerDbUpdatedAt)}</dd>
+            </div>
+            <div className="flex items-start justify-between">
+              <dt>Repo digest</dt>
+              <dd className="text-xs text-slate-500 break-all dark:text-slate-400 md:max-w-xs">
+                {summary.platform.repoDigests.length > 0 ? summary.platform.repoDigests[0] : "—"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Policy context</h4>
+          <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex items-center justify-between">
+              <dt>Scan severities</dt>
+              <dd className="text-right text-slate-900 dark:text-slate-100">{policy?.scanSeverities ?? "—"}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Fail-on severities</dt>
+              <dd className="text-right text-slate-900 dark:text-slate-100">{policy?.failSeverities ?? "—"}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Ignore unfixed</dt>
+              <dd>{ignoreUnfixedLabel}</dd>
+            </div>
+          </dl>
+        </div>
       </div>
     </div>
   );
@@ -341,6 +615,50 @@ export const RunPage = () => {
   }, [data, projectId, runId]);
 
   const runRaw = useMemo(() => (data ? formatJson(data.metadata) : null), [data]);
+  const trivyPolicy = useMemo(() => {
+    if (!data) return null;
+    const metadata = data.metadata ?? {};
+    const assessment = typeof metadata.assessment === "object" && metadata.assessment !== null ? (metadata.assessment as Record<string, unknown>) : null;
+    const trivyConfig = assessment && typeof assessment.trivy === "object" && assessment.trivy !== null ? (assessment.trivy as Record<string, unknown>) : null;
+    if (!trivyConfig) return null;
+    const scanSeverities =
+      typeof trivyConfig.scanSeverities === "string"
+        ? trivyConfig.scanSeverities
+        : typeof trivyConfig.scan_levels === "string"
+          ? trivyConfig.scan_levels
+          : null;
+    const failSeverities =
+      typeof trivyConfig.failSeverities === "string"
+        ? trivyConfig.failSeverities
+        : typeof trivyConfig.fail_levels === "string"
+          ? trivyConfig.fail_levels
+          : null;
+    const ignoreUnfixed =
+      typeof trivyConfig.ignoreUnfixed === "boolean"
+        ? trivyConfig.ignoreUnfixed
+        : typeof trivyConfig.ignore_unfixed === "boolean"
+          ? trivyConfig.ignore_unfixed
+          : null;
+    const scannerMeta =
+      typeof trivyConfig.scanner === "object" && trivyConfig.scanner !== null
+        ? (trivyConfig.scanner as Record<string, unknown>)
+        : null;
+    const scannerVersion =
+      scannerMeta && typeof scannerMeta.version === "string" && scannerMeta.version.length > 0
+        ? scannerMeta.version
+        : null;
+    const scannerDbUpdatedAt =
+      scannerMeta && typeof scannerMeta.dbUpdatedAt === "string" && scannerMeta.dbUpdatedAt.length > 0
+        ? scannerMeta.dbUpdatedAt
+        : null;
+    return {
+      scanSeverities,
+      failSeverities,
+      ignoreUnfixed,
+      scannerVersion,
+      scannerDbUpdatedAt
+    };
+  }, [data]);
 
   if (!projectId || !runId) return <ErrorState message="Run reference incomplete" />;
   if (loading) return <LoadingState message={`Loading run ${runId}`} />;
@@ -368,7 +686,27 @@ export const RunPage = () => {
         actions={runRaw ? renderArtifactAction("Run metadata (run.json)", runRaw) : null}
         defaultOpen
       >
-        <RunDetailCard detail={data} />
+        <RunDetailCard
+          detail={data}
+          sbomHighlights={
+            sbomSummary
+              ? {
+                  totalComponents: sbomSummary.totalComponents,
+                  uniqueTypes: sbomSummary.uniqueTypes,
+                  uniqueLicenses: sbomSummary.uniqueLicenses,
+                  baseImage: sbomSummary.baseImage,
+                  topLicenses: sbomSummary.topLicenses
+                }
+              : null
+          }
+          trivyHighlights={
+            trivySummary
+              ? {
+                  platform: trivySummary.platform
+                }
+              : null
+          }
+        />
       </CollapsibleSection>
       <CollapsibleSection
         title="Software Bill of Materials (SBOM)"
@@ -395,7 +733,7 @@ export const RunPage = () => {
         ) : artifactError ? (
           <ErrorState message={artifactError} />
         ) : trivySummary ? (
-          <TrivySummaryView summary={trivySummary} />
+          <TrivySummaryView summary={trivySummary} policy={trivyPolicy} />
         ) : (
           <p className="text-sm text-slate-500 dark:text-slate-400">No Trivy report was captured for this run.</p>
         )}

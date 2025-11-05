@@ -230,6 +230,25 @@ jobs:
           set -euo pipefail
           test -s "trivy-report.json" || { echo "Trivy JSON not created"; ls -la; exit 2; }
 
+      - name: Capture Trivy scanner metadata
+        run: |
+          set -euo pipefail
+          TRIVY_VERSION_RAW=$(trivy --version 2>/dev/null || true)
+          TRIVY_VERSION=$(echo "$TRIVY_VERSION_RAW" | awk -F': ' '/^Version:/ {print $2; exit}')
+          TRIVY_DB_UPDATED=$(echo "$TRIVY_VERSION_RAW" | awk -F': ' '/UpdatedAt:/ {print $2; exit}')
+          if [ -z "$TRIVY_DB_UPDATED" ]; then
+            DB_INFO_JSON=$(trivy --cache-dir "${HOME}/.cache/trivy" db info --format json 2>/dev/null || trivy db info --format json 2>/dev/null || echo "")
+            if [ -n "$DB_INFO_JSON" ] && command -v jq >/dev/null 2>&1; then
+              TRIVY_DB_UPDATED=$(echo "$DB_INFO_JSON" | jq -r '.UpdatedAt // .updated_at // empty')
+            fi
+          fi
+          if [ -n "$TRIVY_VERSION" ]; then
+            echo "TRIVY_SCANNER_VERSION=$TRIVY_VERSION" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$TRIVY_DB_UPDATED" ]; then
+            echo "TRIVY_DB_UPDATED=$TRIVY_DB_UPDATED" >> "$GITHUB_ENV"
+          fi
+
       - name: Generate Trivy SARIF
         uses: aquasecurity/trivy-action@0.33.1
         with:
@@ -413,6 +432,8 @@ jobs:
             --arg cosignStatus    "${COSIGN_VERIFY_STATUS:-unknown}" \
             --arg sevLevels       "${{ steps.cfg.outputs.scan_levels }}" \
             --arg failLevels      "${{ steps.cfg.outputs.fail_levels }}" \
+            --arg trivyVersion    "${TRIVY_SCANNER_VERSION:-}" \
+            --arg trivyDbUpdated  "${TRIVY_DB_UPDATED:-}" \
             --argjson ignoreUnfix ${{ steps.cfg.outputs.ignore_unfixed }} \
             --argjson totalFindings ${TRIVY_FINDINGS_TOTAL:-0} \
             --argjson failFindings  ${TRIVY_FINDINGS_FAILSET:-0} \
@@ -443,6 +464,10 @@ jobs:
                   scanSeverities: $sevLevels,
                   ignoreUnfixed: $ignoreUnfix,
                   failSeverities: $failLevels,
+                  scanner: {
+                    version: (if ($trivyVersion | length) > 0 then $trivyVersion else null end),
+                    dbUpdatedAt: (if ($trivyDbUpdated | length) > 0 then $trivyDbUpdated else null end)
+                  },
                   findings: { total: $totalFindings, failSet: $failFindings }
                 }
               },
