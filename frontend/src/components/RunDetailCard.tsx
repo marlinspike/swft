@@ -1,4 +1,5 @@
 import type { RunDetail } from "@lib/types";
+import { InfoPopover } from "@components/InfoPopover";
 
 const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "—");
 const truncateCommit = (commit: string | undefined): string => (commit && commit.length > 7 ? commit.slice(0, 7) : commit ?? "—");
@@ -19,6 +20,38 @@ type TrivyHighlights = {
     repoDigests: string[];
   };
 } | null;
+
+const overviewHelp = {
+  timeline: {
+    description: "Key signals coming from run.json that show when the workflow executed and whether the gatekeeping checks passed.",
+    items: [
+      { label: "Created", content: "UTC timestamp recorded in run.json for this workflow run." },
+      { label: "Cosign verification", content: "Result of the signing verification step against the pushed image digest." },
+      { label: "Trivy findings", content: "Total findings and those that triggered the fail-set in policy summarised from run.json." },
+      { label: "Deployment URL", content: "Endpoint emitted by deployment steps so the accrediting official can inspect the live instance." }
+    ]
+  },
+  github: {
+    description: "Repository provenance captured in run.json so reviewers can trace the source commit and workflow invocation.",
+    items: [
+      { label: "Repository", content: "GitHub repository that produced this run." },
+      { label: "Workflow & Branch", content: "The workflow file and branch/ref used during execution." },
+      { label: "Commit & Run link", content: "Direct pointers to the commit SHA and GitHub Actions run for audit trails." }
+    ]
+  },
+  image: {
+    description: "Image provenance derived from run.json and SBOM summary to document what exactly was scanned and deployed.",
+    items: [
+      { label: "Source image", content: "Registry/name:tag that was built and published by the workflow." },
+      { label: "Base image & OS", content: "Details from the SBOM indicating the parent image and OS component for hardening review." },
+      { label: "Repo digest", content: "Immutable digest of the image that all findings relate to." }
+    ]
+  },
+  artifacts: {
+    description: "Artifacts uploaded alongside the run so stakeholders can download the SBOM, Trivy report, and run metadata directly.",
+    items: [{ content: "Each entry shows the artifact type and the blob name stored in Azure/GitHub for reference." }]
+  }
+} as const;
 
 export const RunDetailCard = ({
   detail,
@@ -54,7 +87,13 @@ export const RunDetailCard = ({
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Run timeline</h3>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Run timeline</h3>
+          <InfoPopover title="Run timeline" description={overviewHelp.timeline.description} items={overviewHelp.timeline.items} align="left" />
+        </div>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          Snapshot of when the run executed, whether signing and vulnerability checks passed, and where it was deployed.
+        </p>
         <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Run {detail.summary.run_id}</p>
         <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
           <div className="flex items-center justify-between">
@@ -82,7 +121,13 @@ export const RunDetailCard = ({
         </dl>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">GitHub context</h3>
+       <div className="flex items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">GitHub context</h3>
+          <InfoPopover title="GitHub context" description={overviewHelp.github.description} items={overviewHelp.github.items} align="left" />
+        </div>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          Provenance of the workflow execution so you can trace the source repository, commit, and actions run.
+        </p>
         <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
           <div className="flex items-center justify-between">
             <dt>Repository</dt>
@@ -113,7 +158,13 @@ export const RunDetailCard = ({
         </dl>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60 md:col-span-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Image provenance</h3>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Image provenance</h3>
+          <InfoPopover title="Image provenance" description={overviewHelp.image.description} items={overviewHelp.image.items} align="left" />
+        </div>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          Shows the image reference, digest, and base components that the run built, scanned, and deployed.
+        </p>
         <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
           <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
             <dt className="font-medium">Source image</dt>
@@ -152,7 +203,13 @@ export const RunDetailCard = ({
         </dl>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60 md:col-span-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Artifacts</h3>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Artifacts</h3>
+          <InfoPopover title="Artifacts" description={overviewHelp.artifacts.description} items={overviewHelp.artifacts.items} align="left" />
+        </div>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          Downloadable outputs linked to this run—use them for independent review or archival.
+        </p>
         <ul className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-300">
           {detail.artifacts.map((artifact) => (
             <li key={artifact.blob_name} className="flex items-center justify-between">
