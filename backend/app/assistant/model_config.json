@@ -1,0 +1,36 @@
+{
+  "azure": {
+    "default_model": "gpt-5-mini",
+    "models": {
+      "gpt-5-mini": {
+        "deployment": "gpt-5-mini",
+        "response_format": "json"
+      },
+      "gpt-4o": {
+        "deployment": "gpt-4o",
+        "response_format": "json"
+      }
+    }
+  },
+  "openai": {
+    "default_model": "gpt-4o",
+    "models": {
+      "gpt-4o": {
+        "model": "gpt-4o",
+        "response_format": "json"
+      },
+      "gpt-4o-mini": {
+        "model": "gpt-4o-mini",
+        "response_format": "json"
+      },
+      "gpt-5-nano": {
+        "model": "gpt-5-nano",
+        "response_format": "json"
+      },
+      "gpt-4.1": {
+        "model": "gpt-4.1",
+        "response_format": "json"
+      }
+    }
+  }
+}

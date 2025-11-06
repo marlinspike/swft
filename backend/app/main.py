@@ -7,6 +7,7 @@ from .api.routes import projects as projects_router
 from .api.routes import runs as runs_router
 from .api.routes import artifacts as artifacts_router
 from .core.logging import configure_logging
+from .api.routes import assistant as assistant_router
 
 
 def create_app() -> FastAPI:
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router.router)
     app.include_router(runs_router.router)
     app.include_router(artifacts_router.router)
+    app.include_router(assistant_router.router)
     return app
 
 

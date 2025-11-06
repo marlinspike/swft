@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { fetchArtifact, fetchRunDetail } from "@lib/api";
+import type { AssistantFacet } from "@lib/types";
 import { useApi } from "@hooks/useApi";
 import { LoadingState } from "@components/LoadingState";
 import { ErrorState } from "@components/ErrorState";
@@ -9,6 +10,8 @@ import { RunDetailCard } from "@components/RunDetailCard";
 import { CollapsibleSection } from "@components/CollapsibleSection";
 import { JsonModal } from "@components/JsonModal";
 import { InfoPopover } from "@components/InfoPopover";
+import { AssistantPanel } from "@components/assistant/AssistantPanel";
+import { SparklesIcon } from "@heroicons/react/24/outline";
 
 // Full run detail page: fetches the main run record, enriches it with SBOM/Trivy summaries,
 // and renders a stack of cards with provenance and security insights.
@@ -622,7 +625,16 @@ export const RunPage = () => {
   const [trivyRaw, setTrivyRaw] = useState<string | null>(null);
   const [artifactError, setArtifactError] = useState<string | null>(null);
   const [loadingArtifacts, setLoadingArtifacts] = useState<boolean>(false);
-  const [rawModal, setRawModal] = useState<{ title: string; content: string } | null>(null);
+  const [rawModal, setRawModal] = useState<{ title: string; content: string; fileName?: string } | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantFacet, setAssistantFacet] = useState<AssistantFacet>("run_manifest");
+  const [assistantPrompt, setAssistantPrompt] = useState<string | undefined>(undefined);
+
+  const openAssistant = (facet: AssistantFacet, prompt?: string) => {
+    setAssistantFacet(facet);
+    setAssistantPrompt(prompt);
+    setAssistantOpen(true);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -728,7 +740,7 @@ export const RunPage = () => {
   if (error || !data) return <ErrorState message={error ?? "Unable to load run detail"} />;
 
   // Helper for the "View raw JSON" buttons so each section stays uncluttered.
-  const renderArtifactAction = (label: string, content: string | null, fileName?: string) =>
+  const buildRawJsonButton = (label: string, content: string | null, fileName?: string) =>
     content
       ? (
         <button
@@ -741,19 +753,43 @@ export const RunPage = () => {
       )
       : null;
 
+  const buildAssistantButton = (facetType: AssistantFacet, prompt: string) => (
+    <button
+      type="button"
+      onClick={() => openAssistant(facetType, prompt)}
+      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-white"
+    >
+      <SparklesIcon className="h-4 w-4" />
+      Ask about this
+    </button>
+  );
+
   return (
     <div className="space-y-6">
-      <Breadcrumbs items={[{ label: "Projects", to: "/" }, { label: projectId, to: `/projects/${projectId}` }, { label: `Run ${runId}` }]} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Breadcrumbs items={[{ label: "Projects", to: "/" }, { label: projectId, to: `/projects/${projectId}` }, { label: `Run ${runId}` }]} />
+        <button
+          type="button"
+          onClick={() => openAssistant("run_manifest")}
+          className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+        >
+          <SparklesIcon className="h-5 w-5" />
+          Ask Assistant
+        </button>
+      </div>
       <CollapsibleSection
         title="Run overview"
         description="Execution details from the SWFT workflow and deployment output."
-        actions={runRaw && data.artifacts
-          ? renderArtifactAction(
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {buildRawJsonButton(
               "Run metadata (run.json)",
               runRaw,
               (data.artifacts.find((artifact) => artifact.artifact_type === "run")?.blob_name) ?? "run.json"
-            )
-          : null}
+            )}
+            {buildAssistantButton("run_manifest", `Summarize run ${runId} for an Authorizing Official.`)}
+          </div>
+        }
         defaultOpen
       >
         <RunDetailCard
@@ -781,11 +817,16 @@ export const RunPage = () => {
       <CollapsibleSection
         title="Software Bill of Materials (SBOM)"
         description="Component inventory captured from the container image."
-        actions={renderArtifactAction(
-          "SBOM (sbom.cyclonedx.json)",
-          sbomRaw,
-          (data.artifacts.find((artifact) => artifact.artifact_type === "sbom")?.blob_name) ?? "sbom.cyclonedx.json"
-        )}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {buildRawJsonButton(
+              "SBOM (sbom.cyclonedx.json)",
+              sbomRaw,
+              (data.artifacts.find((artifact) => artifact.artifact_type === "sbom")?.blob_name) ?? "sbom.cyclonedx.json"
+            )}
+            {buildAssistantButton("sbom", `Highlight critical supply-chain risks in the SBOM for run ${runId}.`)}
+          </div>
+        }
       >
         {loadingArtifacts ? (
           <LoadingState message="Loading SBOM summary" />
@@ -800,11 +841,16 @@ export const RunPage = () => {
       <CollapsibleSection
         title="Vulnerability scan (Trivy)"
         description="Findings reported by Trivy across the container image."
-        actions={renderArtifactAction(
-          "Trivy report (trivy-report.json)",
-          trivyRaw,
-          (data.artifacts.find((artifact) => artifact.artifact_type === "trivy")?.blob_name) ?? "trivy-report.json"
-        )}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {buildRawJsonButton(
+              "Trivy report (trivy-report.json)",
+              trivyRaw,
+              (data.artifacts.find((artifact) => artifact.artifact_type === "trivy")?.blob_name) ?? "trivy-report.json"
+            )}
+            {buildAssistantButton("trivy", `Explain the highest-risk vulnerabilities from the Trivy scan for run ${runId}.`)}
+          </div>
+        }
       >
         {loadingArtifacts ? (
           <LoadingState message="Loading Trivy report" />
@@ -816,7 +862,23 @@ export const RunPage = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400">No Trivy report was captured for this run.</p>
         )}
       </CollapsibleSection>
-      {rawModal && <JsonModal title={rawModal.title} content={rawModal.content} onClose={() => setRawModal(null)} />}
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => {
+          setAssistantOpen(false);
+          setAssistantPrompt(undefined);
+        }}
+        projectId={projectId}
+        runId={runId}
+        initialFacet={assistantFacet}
+        initialPrompt={assistantPrompt}
+        contextArtifacts={{
+          run: runRaw,
+          sbom: sbomRaw,
+          trivy: trivyRaw,
+        }}
+      />
+      {rawModal && <JsonModal title={rawModal.title} content={rawModal.content} fileName={rawModal.fileName} onClose={() => setRawModal(null)} />}
     </div>
   );
 };

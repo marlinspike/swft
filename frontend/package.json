@@ -13,9 +13,13 @@
     "@heroicons/react": "^2.1.5",
     "@nivo/core": "^0.85.0",
     "@nivo/line": "^0.85.0",
+    "highlight.js": "^11.10.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.25.1"
+    "react-markdown": "^9.0.3",
+    "react-router-dom": "^6.25.1",
+    "rehype-highlight": "^6.0.0",
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
