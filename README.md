@@ -63,9 +63,11 @@ The UI provides:
 
 - Project dashboard with latest run timestamps
 - Per-project run tables summarizing cosign status and Trivy finding counts
-- Interactive trend charts (Nivo) graphing SBOM components and Trivy findings across recent runs with direct navigation to run detail
+- Interactive trend charts graphing SBOM components and Trivy findings across recent runs with direct navigation to run detail
 - Run detail views with metadata, artifact listings, and inline JSON viewers
 - Light/Dark mode theme toggle with persisted preference
+
+Trend charts activate once a project has at least two runs. Users can toggle between 2, 3, 5, 7, 9, or 11-run windows, enable/disable SBOM component and Trivy severity series, and click any data point to jump directly into that run’s detail view. The responsive Nivo implementation honors the portal’s light/dark theme and gracefully handles sparse data sets.
 
 #### UI Preview
 
@@ -77,6 +79,7 @@ The UI provides:
 | Raw JSON | Modal viewer for raw artifact payloads (run, SBOM, Trivy) | ![Raw JSON modal](images/21_Dashboard.png) |
 | Vulnerability Scan | Trivy severity summary and ranked findings | ![Trivy findings](images/30_Dashboard.png) |
 | Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Popup.png) |
+| Trend Charts | Recent SBOM component totals and Trivy findings over selectable run windows | ![Trend chart](images/50_Chart.png) |
 
 ### Sample FastAPI Workload
 
