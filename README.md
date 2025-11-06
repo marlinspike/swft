@@ -2,6 +2,14 @@
 
 This repository hosts a supply-chain security MVP for the DoD Software FastTrack (SWFT) initiative. It is built on the [DoD Enterprise DevSecOps Reference Design for Azure and GitHub](https://dodcio.defense.gov/Portals/0/Documents/Library/DoDRefDesignCloudGithub.pdf), co-developed by the DoD CIO and Microsoft (see Reuben Cleetus and Tim Meyers). That reference architecture affirms GitHub.com private organizations and repositories can support IL5 workloads when paired with the prescribed SaaS/IaC controls, giving federal, DoD, and regulated programs a sanctioned pattern to “code low, deploy high” with GitHub Enterprise at IL2 while promoting artifacts into IL4/5 environments secured by DoD Cloud IaC baselines and provisional ATOs. It outlines how SaaS toolchains, Azure Government landing zones, and CSP-managed services combine to deliver secure DevSecOps pipelines, while highlighting Authorizing Official guidance for monitoring, inheritance, and full ATO transitions aligned to IL4/5 operations. This implementation follows those patterns so Fed/DoD and regulated-industry customers can demonstrate compliant adoption with minimal tailoring.
 
+## Why This Repo and ideas matter
+
+- **Continuous evidence, not quarterly binders.** Every container build automatically emits a signed SBOM, Trivy scan, and run manifest that the portal ingests within minutes, so Authorizing Officials can inspect living artifacts instead of chasing emailed checklists.
+- **Speed with trust baked in.** Cosign signatures, policy-enforced scans, and immutable blob storage prove the image deployed to IL4/5 is exactly what passed IL2 review—making “build low, deploy high” a repeatable, auditable muscle rather than a one-off hero effort.
+- **Humans decide; automation prepares.** The workflow and dashboard assemble the compliance story upfront, highlighting drift and policy violations so assessors spend time on judgment calls, not document triage.
+- **AI-ready from day one.** Because every run lands as structured data, we can layer assistants that summarize large reports, surface anomalies, or recommend mitigations—letting analysts leverage AI where it amplifies mission outcomes.
+- **Single pane of glass for the enterprise.** Developers keep iterating quickly, security inherits the controls automatically, and decision-makers monitor readiness across programs from a single view, driving faster authorizations without sacrificing rigor.
+
 It contains:
 
 - **`backend/`** – FastAPI service that indexes pipeline artifacts (SBOM, Trivy, run metadata) directly from Azure Blob Storage.
@@ -63,11 +71,19 @@ The UI provides:
 
 - Project dashboard with latest run timestamps
 - Per-project run tables summarizing cosign status and Trivy finding counts
-- Interactive trend charts graphing SBOM components and Trivy findings across recent runs with direct navigation to run detail
+- Authorization signal board that highlights five risk lenses: vulnerability posture, SBOM inventory, signature health, artifact completeness, and delivery cadence
 - Run detail views with metadata, artifact listings, and inline JSON viewers
 - Light/Dark mode theme toggle with persisted preference
 
-Trend charts activate once a project has at least two runs. Users can toggle between 2, 3, 5, 7, 9, or 11-run windows, enable/disable SBOM component and Trivy severity series, and click any data point to jump directly into that run’s detail view. The responsive Nivo implementation honors the portal’s light/dark theme and gracefully handles sparse data sets.
+The authorization signals card activates once a project has at least two runs. Users can toggle between 2, 3, 5, 7, 9, or 11-run windows, and click any point to jump directly into the matching run detail. Each panel targets a question Authorizing Officials routinely ask:
+
+1. **Vulnerability posture** – total vs. fail-set Trivy findings to expose emerging high-severity risk.
+2. **SBOM inventory** – component count swings that might indicate unexpected supply chain changes.
+3. **Signature health** – consecutive cosign failures or missing attestations.
+4. **Evidence completeness** – quick confirmation that SBOM, Trivy, and run manifests landed together.
+5. **Delivery cadence** – days between runs to spot stalled pipelines or aging evidence.
+
+The responsive Nivo implementation honors the portal’s light/dark theme and gracefully handles sparse data sets.
 
 #### UI Preview
 
@@ -79,7 +95,7 @@ Trend charts activate once a project has at least two runs. Users can toggle bet
 | Raw JSON | Modal viewer for raw artifact payloads (run, SBOM, Trivy) | ![Raw JSON modal](images/21_Dashboard.png) |
 | Vulnerability Scan | Trivy severity summary and ranked findings | ![Trivy findings](images/30_Dashboard.png) |
 | Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Popup.png) |
-| Trend Charts | Recent SBOM component totals and Trivy findings over selectable run windows | ![Trend chart](images/50_Chart.png) |
+| Authorization Signals | Multi-panel chart showing risk posture, SBOM, cosign, evidence completeness, and cadence | ![Authorization signal charts](images/50_Charts_Authorization_Signals.png) |
 
 ### Sample FastAPI Workload
 

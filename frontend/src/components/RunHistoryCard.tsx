@@ -5,48 +5,17 @@ import { useTheme } from "@hooks/useTheme";
 import type { RunSummary } from "@lib/types";
 
 /**
- * Supported comparison window sizes exposed to the user.
+ * Supported comparison window sizes exposed to the user. Keeping the list short prevents analysis fatigue.
  */
 type WindowOption = 2 | 3 | 5 | 7 | 9 | 11;
 const WINDOW_OPTIONS: WindowOption[] = [2, 3, 5, 7, 9, 11];
 
-type MetricKey = "sbomComponents" | "trivyTotal" | "trivyFailset";
-
-// Describe each line on the chart so toggling metrics is a simple lookup.
-type MetricConfig = {
-  key: MetricKey;
-  label: string;
-  color: string;
-  accessor: (run: RunSummary) => number | null;
-  description: string;
-};
-
-const METRICS: MetricConfig[] = [
-  {
-    key: "sbomComponents",
-    label: "SBOM components",
-    color: "#38bdf8",
-    accessor: (run) => run.sbom_component_total,
-    description: "Component count derived from the CycloneDX SBOM."
-  },
-  {
-    key: "trivyTotal",
-    label: "Trivy total findings",
-    color: "#f97316",
-    accessor: (run) => run.trivy_findings_total ?? 0,
-    description: "Total vulnerabilities reported by Trivy."
-  },
-  {
-    key: "trivyFailset",
-    label: "Trivy fail-set",
-    color: "#ef4444",
-    accessor: (run) => run.trivy_findings_failset ?? 0,
-    description: "Findings in the enforced severity set."
-  }
-];
+type ChronologicalRun = RunSummary & { label: string };
+type LineDatum = { x: string; y: number | null; runId: string; createdAtLabel: string; [key: string]: unknown };
+type LineSeries = Array<{ id: string; color: string; data: LineDatum[] }>;
 
 /**
- * Convert an ISO timestamp into a locale string (fallbacks for missing/invalid values).
+ * Convert an ISO timestamp into a stable human-readable label.
  */
 const formatTimestamp = (value: string | null): string => {
   if (!value) return "Timestamp unavailable";
@@ -56,40 +25,7 @@ const formatTimestamp = (value: string | null): string => {
 };
 
 /**
- * Shape the latest runs into Nivo series, filtering to the set of active metrics.
- */
-const buildChartSeries = (
-  runs: RunSummary[],
-  metrics: MetricConfig[],
-  active: Set<MetricKey>
-): Array<{
-    id: string;
-    color: string;
-    data: Array<{ x: string; y: number | null; runId: string; createdAtLabel: string }>;
-  }> => {
-  const chronological = runs.slice().reverse();
-  const enriched = chronological.map((run) => ({
-    ...run,
-    label: formatTimestamp(run.created_at),
-    runId: run.run_id
-  }));
-  return metrics
-    .filter((metric) => active.has(metric.key))
-    .map((metric) => ({
-      id: metric.label,
-      color: metric.color,
-      data: enriched.map((run) => ({
-        x: run.runId,
-        y: metric.accessor(run),
-        runId: run.runId,
-        createdAtLabel: run.label,
-        run
-      }))
-    }));
-};
-
-/**
- * Derive a Nivo theme palette that mirrors the current Tailwind light/dark mode styling.
+ * Derive a Nivo theme palette that mirrors the current Tailwind light/dark styling.
  */
 const useNivoTheme = (isDark: boolean) =>
   useMemo(
@@ -116,60 +52,224 @@ const useNivoTheme = (isDark: boolean) =>
     [isDark]
   );
 
+const COSIGN_SCALE = {
+  passed: 1,
+  failed: 0
+} as const;
+
+const ARTIFACT_KEYS: Array<{ field: keyof RunSummary["artifact_counts"]; label: string; color: string }> = [
+  { field: "run", label: "Run metadata", color: "#2563eb" },
+  { field: "sbom", label: "SBOM", color: "#38bdf8" },
+  { field: "trivy", label: "Trivy report", color: "#14b8a6" }
+];
+
 /**
- * Trend card that renders SBOM/Trivy metrics across the last N runs with interactive navigation.
+ * Secure build insights rendered as multiple focused charts so Authorizing Officials can spot "authorization smells" instantly.
  */
 export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: RunSummary[] }) => {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
-  // Default to five runs when we can but gracefully fall back if there isn't enough data.
+  // Default to five runs for a balanced view, but adapt when the dataset is smaller.
   const preferredDefault = WINDOW_OPTIONS.includes(5) ? 5 : WINDOW_OPTIONS[0];
   const [windowSize, setWindowSize] = useState<WindowOption>(preferredDefault);
-  // Maintain the selected metrics inside a Set so toggles are easy to flip on/off.
-  const [visibleMetrics, setVisibleMetrics] = useState<Set<MetricKey>>(() => new Set(METRICS.map((metric) => metric.key)));
 
   const effectiveCount = Math.min(windowSize, runs.length);
   const recentRuns = useMemo(() => runs.slice(0, effectiveCount), [runs, effectiveCount]);
-  const chartSeries = useMemo(() => buildChartSeries(recentRuns, METRICS, visibleMetrics), [recentRuns, visibleMetrics]);
-  const noMetricsSelected = chartSeries.length === 0;
-  const hasRenderableData = chartSeries.some((serie) => serie.data.some((point) => point.y !== null));
-  const showPlaceholder = noMetricsSelected || !hasRenderableData;
-  const placeholderTitle = noMetricsSelected ? "Select a metric to visualise" : "Not enough data yet";
-  const placeholderSubtitle = noMetricsSelected ? "Enable at least one metric above to render the chart." : "Generate additional runs to populate SBOM and Trivy metrics.";
+
+  // Keep runs chronological for easier reading left-to-right.
+  const chronological: ChronologicalRun[] = useMemo(
+    () =>
+      recentRuns
+        .slice()
+        .reverse()
+        .map((run) => ({
+          ...run,
+          label: formatTimestamp(run.created_at)
+        })),
+    [recentRuns]
+  );
+
   const nivoTheme = useNivoTheme(isDark);
 
-  const toggleMetric = (key: MetricKey) => {
-    // Preserve at least one metric so the chart never renders empty lines.
-    setVisibleMetrics((current) => {
-      const next = new Set(current);
-      if (next.has(key)) {
-        if (next.size === 1) return current; // keep at least one metric visible
-        next.delete(key);
-      } else {
-        next.add(key);
+  const vulnerabilitySeries: LineSeries = useMemo(
+    () => [
+      {
+        id: "Total findings",
+        color: "#fb923c",
+        data: chronological.map((run) => ({
+          x: run.run_id,
+          y: run.trivy_findings_total ?? 0,
+          runId: run.run_id,
+          createdAtLabel: run.label
+        }))
+      },
+      {
+        id: "Fail-set findings",
+        color: "#ef4444",
+        data: chronological.map((run) => ({
+          x: run.run_id,
+          y: run.trivy_findings_failset ?? 0,
+          runId: run.run_id,
+          createdAtLabel: run.label
+        }))
       }
-      return next;
+    ],
+    [chronological]
+  );
+
+  const sbomSeries: LineSeries = useMemo(
+    () => [
+      {
+        id: "SBOM components",
+        color: "#38bdf8",
+        data: chronological.map((run) => ({
+          x: run.run_id,
+          y: run.sbom_component_total ?? null,
+          runId: run.run_id,
+          createdAtLabel: run.label
+        }))
+      }
+    ],
+    [chronological]
+  );
+
+  const cosignSeries: LineSeries = useMemo(
+    () => [
+      {
+        id: "Cosign verification",
+        color: "#22c55e",
+        data: chronological.map((run) => {
+          const normalized = run.cosign_status ? COSIGN_SCALE[run.cosign_status as keyof typeof COSIGN_SCALE] ?? null : null;
+          return {
+            x: run.run_id,
+            y: normalized,
+            runId: run.run_id,
+            createdAtLabel: run.label,
+            status: run.cosign_status ?? "unknown"
+          };
+        })
+      }
+    ],
+    [chronological]
+  );
+
+  const evidenceSeries: LineSeries = useMemo(
+    () =>
+      ARTIFACT_KEYS.map((key) => ({
+        id: key.label,
+        color: key.color,
+        data: chronological.map((run) => ({
+          x: run.run_id,
+          y: ((run.artifact_counts?.[key.field] as number | undefined) ?? 0) > 0 ? 1 : 0,
+          runId: run.run_id,
+          createdAtLabel: run.label
+        }))
+      })),
+    [chronological]
+  );
+
+  const cadenceSeries: LineSeries = useMemo(() => {
+    const seriesData = chronological.map((run, index) => {
+      if (index === 0) {
+        return { x: run.run_id, y: null, runId: run.run_id, createdAtLabel: run.label };
+      }
+      const previous = chronological[index - 1];
+      if (!run.created_at || !previous.created_at) return { x: run.run_id, y: null, runId: run.run_id, createdAtLabel: run.label };
+      const currentTime = new Date(run.created_at).getTime();
+      const previousTime = new Date(previous.created_at).getTime();
+      const diffHours = (currentTime - previousTime) / (1000 * 60 * 60);
+      const diffDays = diffHours / 24;
+      return {
+        x: run.run_id,
+        y: Number(diffDays.toFixed(2)),
+        runId: run.run_id,
+        createdAtLabel: run.label
+      };
     });
-  };
+
+    return [
+      {
+        id: "Days since prior run",
+        color: "#a855f7",
+        data: seriesData
+      }
+    ];
+  }, [chronological]);
 
   const handlePointClick = (point: Point) => {
-    // Jump straight to the run detail when the user clicks a point on the chart.
     const runId = point.data.runId as string | undefined;
-    if (runId) {
-      navigate(`/projects/${projectId}/runs/${runId}`);
-    }
+    if (runId) navigate(`/projects/${projectId}/runs/${runId}`);
   };
 
   const windowLabel = effectiveCount < windowSize ? `${effectiveCount} of ${windowSize}` : `${effectiveCount}`;
+
+  const renderLineChart = (
+    series: LineSeries,
+    options?: {
+      yMin?: number;
+      yMax?: number | "auto";
+      axisLeftLabel?: string;
+      axisLeftFormat?: (value: number) => string;
+      tooltipFormatter?: (slice: SliceTooltipProps["slice"]) => JSX.Element;
+    }
+  ) => (
+    <ResponsiveLine
+      data={series}
+      margin={{ top: 20, right: 32, bottom: 48, left: 56 }}
+      xScale={{ type: "point" }}
+      yScale={{ type: "linear", min: options?.yMin ?? 0, max: options?.yMax ?? "auto", stacked: false }}
+      theme={nivoTheme}
+      colors={(serie) => (typeof serie.color === "string" ? serie.color : undefined)}
+      lineWidth={3}
+      enablePoints
+      pointSize={10}
+      pointBorderWidth={2}
+      pointBorderColor={isDark ? "#0f172a" : "#ffffff"}
+      enableSlices="x"
+      sliceTooltip={({ slice }) =>
+        options?.tooltipFormatter ? (
+          options.tooltipFormatter(slice)
+        ) : (
+          <div className="rounded-xl bg-white p-3 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Run {slice.points[0]?.data.runId as string}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{slice.points[0]?.data.createdAtLabel as string}</div>
+            <div className="mt-2 space-y-1">
+              {slice.points.map((point) => (
+                <div key={point.id} className="flex items-center gap-2">
+                  <span className="inline-flex h-2.5 w-2.5 flex-none rounded-full" style={{ background: point.serieColor }} />
+                  <span className="flex-1 text-xs">{point.serieId}</span>
+                  <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{point.data.yFormatted}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }
+      axisBottom={{ tickRotation: -35, legend: "Run ID", legendOffset: 42, legendPosition: "middle" }}
+      axisLeft={{
+        legend: options?.axisLeftLabel ?? "Count",
+        legendOffset: -45,
+        legendPosition: "middle",
+        format: options?.axisLeftFormat
+      }}
+      crosshairType="x"
+      onClick={handlePointClick}
+      useMesh
+      motionConfig="gentle"
+      animate
+    />
+  );
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-950/50">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Trend history</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Compare SBOM and Trivy signals across recent runs. Click any point to jump to the run detail.</p>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Authorization Signals</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Evidence trends across recent runs. Click any point to jump straight into the detailed run view.
+          </p>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100/70 p-1 dark:border-slate-700 dark:bg-slate-900/60">
           {WINDOW_OPTIONS.map((option) => {
@@ -192,73 +292,96 @@ export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: R
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {METRICS.map((metric) => {
-          const isActive = visibleMetrics.has(metric.key);
-          return (
-            <button
-              key={metric.key}
-              type="button"
-              onClick={() => toggleMetric(metric.key)}
-              className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
-                isActive
-                  ? "border-transparent bg-slate-900 text-white shadow-sm dark:bg-slate-700"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
-              }`}
-            >
-              <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full" style={{ background: metric.color }} />
-              <span>{metric.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
       <div className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Showing {windowLabel} most recent runs</div>
 
-      <div className="mt-6 h-80">
-        {showPlaceholder ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/30">
-            <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{placeholderTitle}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{placeholderSubtitle}</span>
-          </div>
-        ) : (
-          <ResponsiveLine
-            data={chartSeries}
-            margin={{ top: 20, right: 30, bottom: 50, left: 56 }}
-            xScale={{ type: "point" }}
-            yScale={{ type: "linear", min: 0, max: "auto", stacked: false }}
-            theme={nivoTheme}
-            colors={(serie) => (typeof serie.color === "string" ? serie.color : undefined)}
-            lineWidth={3}
-            enablePoints
-            pointSize={10}
-            pointBorderWidth={2}
-            pointBorderColor={isDark ? "#0f172a" : "#ffffff"}
-            enableSlices="x"
-            sliceTooltip={({ slice }: SliceTooltipProps) => (
-              <div className="rounded-xl bg-white p-3 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Run {slice.points[0]?.data.runId as string}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">{slice.points[0]?.data.createdAtLabel as string}</div>
-                <div className="mt-2 space-y-1">
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+          <header className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Vulnerability posture</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Track Trivy findings and the subset that break policy thresholds.
+            </p>
+          </header>
+          <div className="mt-4 h-64">{renderLineChart(vulnerabilitySeries)}</div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+          <header className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">SBOM inventory</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Surface area trends driven by component count changes in the SBOM.</p>
+          </header>
+          <div className="mt-4 h-64">{renderLineChart(sbomSeries)}</div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+          <header className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Signature health</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Watch for consecutive cosign failures or runs lacking attestation.</p>
+          </header>
+          <div className="mt-4 h-64">
+            {renderLineChart(cosignSeries, {
+              yMin: 0,
+              yMax: 1,
+              axisLeftLabel: "Verification",
+              axisLeftFormat: (value) => (value === 1 ? "Passed" : value === 0 ? "Failed" : ""),
+              tooltipFormatter: (slice) => (
+                <div className="rounded-xl bg-white p-3 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Run {slice.points[0]?.data.runId as string}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{slice.points[0]?.data.createdAtLabel as string}</div>
                   {slice.points.map((point) => (
-                    <div key={point.id} className="flex items-center gap-2">
-                      <span className="inline-flex h-2.5 w-2.5 flex-none rounded-full" style={{ background: point.serieColor }} />
-                      <span className="flex-1 text-xs">{point.serieId}</span>
-                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{point.data.yFormatted}</span>
+                    <div key={point.id} className="mt-2 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      {((point.data as unknown as { status?: string }).status ?? "unknown").toUpperCase()}
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-            axisBottom={{ tickRotation: -35, legend: "Run ID", legendOffset: 40, legendPosition: "middle" }}
-            axisLeft={{ legend: "Counts", legendOffset: -45, legendPosition: "middle" }}
-            crosshairType="x"
-            onClick={handlePointClick}
-            useMesh
-            motionConfig="gentle"
-            animate
-          />
-        )}
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+          <header className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Evidence completeness</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Verify that SBOM, Trivy, and run manifests land together every time.</p>
+          </header>
+          <div className="mt-4 h-64">
+            {renderLineChart(evidenceSeries, {
+              yMin: 0,
+              yMax: 1,
+              axisLeftLabel: "Artifact present",
+              axisLeftFormat: (value) => (value === 1 ? "Yes" : value === 0 ? "No" : ""),
+              tooltipFormatter: (slice) => (
+                <div className="rounded-xl bg-white p-3 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Run {slice.points[0]?.data.runId as string}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{slice.points[0]?.data.createdAtLabel as string}</div>
+                  <div className="mt-2 space-y-1">
+                    {slice.points.map((point) => (
+                      <div key={point.id} className="flex items-center justify-between text-xs">
+                        <span>{point.serieId}</span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">{(point.data.y as number) === 1 ? "Present" : "Missing"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-950/40 xl:col-span-2">
+          <header className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Delivery cadence</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Large gaps can indicate stalled pipelines or environments drifting without new evidence.
+            </p>
+          </header>
+          <div className="mt-4 h-64">
+            {renderLineChart(cadenceSeries, {
+              axisLeftLabel: "Days between runs",
+              axisLeftFormat: (value) => value.toString()
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
