@@ -1,15 +1,16 @@
-# SWFT Authorization Portal
+# SWFT Authorization Portal with AI Assistant
 
-This repository hosts a supply-chain security MVP for the DoD Software FastTrack (SWFT) initiative. It is built on the [DoD Enterprise DevSecOps Reference Design for Azure and GitHub](https://dodcio.defense.gov/Portals/0/Documents/Library/DoDRefDesignCloudGithub.pdf), co-developed by the DoD CIO and Microsoft (see Reuben Cleetus and Tim Meyers). That reference architecture affirms GitHub.com private organizations and repositories can support IL5 workloads when paired with the prescribed SaaS/IaC controls, giving federal, DoD, and regulated programs a sanctioned pattern to “code low, deploy high” with GitHub Enterprise at IL2 while promoting artifacts into IL4/5 environments secured by DoD Cloud IaC baselines and provisional ATOs. It outlines how SaaS toolchains, Azure Government landing zones, and CSP-managed services combine to deliver secure DevSecOps pipelines, while highlighting Authorizing Official guidance for monitoring, inheritance, and full ATO transitions aligned to IL4/5 operations. This implementation follows those patterns so Fed/DoD and regulated-industry customers can demonstrate compliant adoption with minimal tailoring.
+This repository hosts a supply-chain security MVP for the DoD Software FastTrack (SWFT) initiative, now paired with an AI-assisted evidence review experience. The portal follows the [DoD Enterprise DevSecOps Reference Design for Azure and GitHub](https://dodcio.defense.gov/Portals/0/Documents/Library/DoDRefDesignCloudGithub.pdf), co-developed by the DoD CIO and Microsoft (see Reuben Cleetus and Tim Meyers). That reference architecture affirms GitHub.com private organizations and repositories can support IL5 workloads when paired with the prescribed SaaS/IaC controls, giving federal, DoD, and regulated programs a sanctioned pattern to “code low, deploy high” with GitHub Enterprise at IL2 while promoting artifacts into IL4/5 environments secured by DoD Cloud IaC baselines and provisional ATOs. It outlines how SaaS toolchains, Azure Government landing zones, and CSP-managed services combine to deliver secure DevSecOps pipelines, while highlighting Authorizing Official guidance for monitoring, inheritance, and full ATO transitions aligned to IL4/5 operations. This implementation follows those patterns so Fed/DoD and regulated-industry customers can demonstrate compliant adoption with minimal tailoring while delegating evidence triage to an embedded AI colleague.
 
 ## Why This Repo and ideas matter
 
 - **Continuous evidence, not quarterly binders.** Every container build automatically emits a signed SBOM, Trivy scan, and run manifest that the portal ingests within minutes, so Authorizing Officials can inspect living artifacts instead of chasing emailed checklists.
-- **Speed with trust baked in.** Cosign signatures, policy-enforced scans, and immutable blob storage prove the image deployed to IL4/5 is exactly what passed IL2 review—making “build low, deploy high” a repeatable, auditable muscle rather than a one-off hero effort.
+- **Speed with trust baked in.** Cosign signatures, policy-enforced scans, and immutable blob storage prove the image deployed to IL4/5 is exactly what passed IL2 review, making “build low, deploy high” a repeatable, auditable muscle rather than a one-off hero effort.
 - **Humans decide; automation prepares.** The workflow and dashboard assemble the compliance story upfront, highlighting drift and policy violations so assessors spend time on judgment calls, not document triage.
 - **Industry best-in-class SAST out of the box.** GitHub CodeQL runs alongside the pipeline, catching code weaknesses with the same static analysis engine used across Microsoft, GitHub, and open source ecosystems.
-- **Low-cost by design.** The footprint leans on resources most teams already license—GitHub Enterprise private org/repo, Azure Storage—and nothing more, so programs add assurance without absorbing a new platform bill.
-- **AI-ready from day one.** Because every run lands as structured data, we can layer assistants that summarize large reports, surface anomalies, or recommend mitigations—letting analysts leverage AI where it amplifies mission outcomes.
+- **Low-cost by design.** The footprint leans on resources most teams already license: GitHub Enterprise private org/repo, Azure Storage, and nothing more, so programs add assurance without absorbing a new platform bill.
+- **AI-native review flows.** The built-in assistant auto-loads SBOM, Trivy, and run manifest evidence (“auto-context”) so Authorizing Officials can interrogate risk data without leaving the dashboard.
+- **AI-ready from day one.** Because every run lands as structured data, teams can extend the assistant with additional personas, prompt packs, or downstream automation that surfaces anomalies and recommended mitigations.
 - **Single pane of glass for the enterprise.** Developers keep iterating quickly, security inherits the controls automatically, and decision-makers monitor readiness across programs from a single view, driving faster authorizations without sacrificing rigor.
 
 It contains:
@@ -25,8 +26,8 @@ The workflow still produces hardened artifacts named `<project>-<run>-{sbom|triv
 
 - **Source control prerequisites:** A private GitHub organization and repository (as prescribed by the DoD reference design) to host workflows, CodeQL, and deployment secrets.
 - **Evidence store:** A single Azure Storage account (Standard tier is sufficient) with three containers for SBOM, Trivy, and run metadata. Local filesystem mirrors keep developer environments inexpensive.
-- **Optional runtime:** Azure Container Instances—or any container host you pick—for showcasing the promoted workload.
-- **Implementation stack:** FastAPI + Python on the backend, React + Vite + Tailwind on the frontend, Nivo for visualization—modern, widely adopted OSS that is easy for teams to maintain or extend.
+- **Optional runtime:** Azure Container Instances, or any container host you pick, for showcasing the promoted workload.
+- **Implementation stack:** FastAPI + Python on the backend, React + Vite + Tailwind on the frontend, Nivo for visualization; modern, widely adopted OSS that is easy for teams to maintain or extend.
 
 ## Quick Start
 
@@ -107,6 +108,62 @@ The responsive Nivo implementation honors the portal’s light/dark theme and gr
 | Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Popup.png) |
 | Authorization Signals | Multi-panel chart showing risk posture, SBOM, cosign, evidence completeness, and cadence | ![Authorization signal charts](images/50_Charts_Authorization_Signals.png) |
 
+---
+
+## SWFT Assistant (Chat Experience)
+
+An embedded assistant now travels with every run detail page. It auto-loads the run manifest plus facet-specific evidence (“auto-context”) so assessors can ask “What broke in this Trivy scan?” and immediately receive grounded, citation-rich answers. Keyboard shortcuts (`⌘ + Enter` / `Ctrl + Enter`) fire off questions without leaving the keyboard.
+
+### Configure credentials
+
+1. Copy `backend/.env.example` to `backend/.env`.
+2. Set the provider and credentials:
+   - For OpenAI:
+     ```
+     OPENAI_PROVIDER=openai
+     OPENAI_API_KEY=sk-...
+     OPENAI_ORG_ID=<optional>
+     ```
+   - For Azure OpenAI:
+     ```
+     OPENAI_PROVIDER=azure
+     OPENAI_API_KEY=<azure-openai-key>
+     OPENAI_API_BASE=https://<resource>.openai.azure.com/
+     OPENAI_API_VERSION=2024-08-01-preview   # match your deployment
+     ```
+3. Keep `ASSISTANT_MODEL_CONFIG_PATH` pointing at the model catalogue you maintain (default is `backend/app/assistant/model_config.json`).
+
+Restart the FastAPI server after editing the environment so the assistant reloads credentials.
+
+### Customise the model catalogue
+
+`backend/app/assistant/model_config.json` describes every model the UI can select. Each entry needs:
+
+- A key (e.g. `azure-gpt-4o-mini`) that the frontend presents in the model dropdown.
+- For Azure entries, a `deployment` that matches the deployment name in your Azure OpenAI resource.
+- For OpenAI entries, a `model` identifier such as `gpt-4o` or `gpt-4o-mini`.
+- Optional `response_format` hints (set to `"json"` for structured replies).
+
+You can add or remove models at any time; the assistant configuration endpoint reads the file on startup so the UI stays in sync.
+
+### Personas & auto-context
+
+- **Personas** (`Security Assessor`, `Compliance Officer`, `DevOps Engineer`, `Software Developer`) live in `backend/app/assistant/prompts.py`. Tweak or extend the persona copy to steer tone and priorities.
+- **Auto-context** automatically attaches evidence to each question:
+  - The run manifest is always provided.
+  - SBOM and Trivy JSON snippets are included when the relevant facet (or the `General` facet) is selected.
+  - `app-design.md` is injected in full so architecture decisions accompany every response.
+  - Large artefacts are trimmed client-side to keep requests within model limits; the assistant labels truncated sections so users know when to fetch the raw JSON modal.
+- **Schemas** in `backend/app/assistant/schema/` define the contracts the assistant cites. They supplement the raw artefacts and keep the model grounded on field names and semantics.
+
+### API & streaming endpoints
+
+- `POST /assistant/chat` - synchronous responses, returning `ChatResponse`.
+- `POST /assistant/chat/stream` - newline-delimited JSON stream with `metadata`, incremental `delta`, optional `error`, and `final` messages. The frontend uses this path for real-time typing indicators.
+- `GET /assistant/config` - returns the active provider, models, persona list, available facets, and whether streaming is enabled.
+
+Both endpoints accept `ChatRequest`, including optional `context` maps if you want to send custom artefacts from another client.
+
 ### Sample FastAPI Workload
 
 The original workload lives under `samples/fastapi-demo/`.
@@ -161,7 +218,7 @@ Outputs persisted per run:
 Enable GitHub code scanning to add static application security testing (SAST) alongside the container pipeline:
 
 1. In GitHub, open `Security → Code scanning alerts → Set up code scanning → CodeQL analysis` and accept the starter pull request that adds `.github/workflows/codeql.yml`.
-2. Confirm the generated `languages` matrix covers this repo—set it to `["python", "javascript-typescript"]` so both the FastAPI backend and React frontend are analyzed. You can add or remove languages at any time.
+2. Confirm the generated `languages` matrix covers this repo; set it to `["python", "javascript-typescript"]` so both the FastAPI backend and React frontend are analyzed. You can add or remove languages at any time.
 3. If `autobuild` fails, replace it with explicit build steps. A typical customization looks like:
 
    ```yaml
@@ -174,7 +231,7 @@ Enable GitHub code scanning to add static application security testing (SAST) al
    - uses: github/codeql-action/analyze@v3
    ```
 
-   Keep dependencies lightweight—install only what the analyzer needs to understand imports/types.
+   Keep dependencies lightweight; install only what the analyzer needs to understand imports/types.
 
 
 ## Developer Tooling

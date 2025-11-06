@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SWFT Run Manifest",
+  "type": "object",
+  "required": [
+    "project",
+    "runId",
+    "pipeline",
+    "status",
+    "artifacts",
+    "policy"
+  ],
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": ["id", "name", "repository"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "repository": { "type": "string", "description": "Source repository identifier" },
+        "environment": { "type": "string", "enum": ["IL2", "IL4", "IL5"] }
+      }
+    },
+    "runId": { "type": "string", "description": "Unique pipeline run identifier" },
+    "pipeline": {
+      "type": "object",
+      "required": ["workflowFile", "trigger", "commit"],
+      "properties": {
+        "workflowFile": { "type": "string" },
+        "trigger": { "type": "string", "description": "Event that launched the run" },
+        "commit": {
+          "type": "object",
+          "required": ["sha", "message", "author"],
+          "properties": {
+            "sha": { "type": "string" },
+            "message": { "type": "string" },
+            "author": { "type": "string" }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": ["overall", "startedAt", "completedAt"],
+      "properties": {
+        "overall": { "type": "string", "enum": ["succeeded", "failed", "cancelled", "running"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "durationSeconds": { "type": "number" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "sbom": { "type": "string", "description": "Blob name for SBOM artefact" },
+        "trivy": { "type": "string", "description": "Blob name for Trivy scan artefact" },
+        "deploy": { "type": "string", "description": "Deployment manifest or release artefact" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["control", "status"],
+            "properties": {
+              "control": { "type": "string", "description": "Control or policy identifier" },
+              "status": { "type": "string", "enum": ["passed", "failed", "skipped"] },
+              "details": { "type": "string" },
+              "evidence": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["control", "expires"],
+            "properties": {
+              "control": { "type": "string" },
+              "expires": { "type": "string", "format": "date" },
+              "authorisedBy": { "type": "string" },
+              "justification": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Optional pipeline metrics to calculate trends",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
