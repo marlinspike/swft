@@ -8,6 +8,7 @@ This repository hosts a supply-chain security MVP for the DoD Software FastTrack
 - **Speed with trust baked in.** Cosign signatures, policy-enforced scans, and immutable blob storage prove the image deployed to IL4/5 is exactly what passed IL2 review—making “build low, deploy high” a repeatable, auditable muscle rather than a one-off hero effort.
 - **Humans decide; automation prepares.** The workflow and dashboard assemble the compliance story upfront, highlighting drift and policy violations so assessors spend time on judgment calls, not document triage.
 - **Industry best-in-class SAST out of the box.** GitHub CodeQL runs alongside the pipeline, catching code weaknesses with the same static analysis engine used across Microsoft, GitHub, and open source ecosystems.
+- **Low-cost by design.** The footprint leans on resources most teams already license—GitHub Enterprise private org/repo, Azure Storage—and nothing more, so programs add assurance without absorbing a new platform bill.
 - **AI-ready from day one.** Because every run lands as structured data, we can layer assistants that summarize large reports, surface anomalies, or recommend mitigations—letting analysts leverage AI where it amplifies mission outcomes.
 - **Single pane of glass for the enterprise.** Developers keep iterating quickly, security inherits the controls automatically, and decision-makers monitor readiness across programs from a single view, driving faster authorizations without sacrificing rigor.
 
@@ -20,10 +21,18 @@ It contains:
 
 The workflow still produces hardened artifacts named `<project>-<run>-{sbom|trivy|run}.json`, enabling the portal to surface evidence without additional ingestion.
 
+## Operating Footprint & Stack
+
+- **Source control prerequisites:** A private GitHub organization and repository (as prescribed by the DoD reference design) to host workflows, CodeQL, and deployment secrets.
+- **Evidence store:** A single Azure Storage account (Standard tier is sufficient) with three containers for SBOM, Trivy, and run metadata. Local filesystem mirrors keep developer environments inexpensive.
+- **Optional runtime:** Azure Container Instances—or any container host you pick—for showcasing the promoted workload.
+- **Implementation stack:** FastAPI + Python on the backend, React + Vite + Tailwind on the frontend, Nivo for visualization—modern, widely adopted OSS that is easy for teams to maintain or extend.
+
 ## Quick Start
 
 ### Prerequisites
 
+- GitHub Enterprise private organization and/or private repository with Actions/CodeQL enabled
 - Python 3.11+
 - Node.js 20+ and npm
 - Azure Storage account (or local artifacts extracted into a directory)
