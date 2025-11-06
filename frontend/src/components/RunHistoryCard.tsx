@@ -12,6 +12,7 @@ const WINDOW_OPTIONS: WindowOption[] = [2, 3, 5, 7, 9, 11];
 
 type MetricKey = "sbomComponents" | "trivyTotal" | "trivyFailset";
 
+// Describe each line on the chart so toggling metrics is a simple lookup.
 type MetricConfig = {
   key: MetricKey;
   label: string;
@@ -123,8 +124,10 @@ export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: R
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
+  // Default to five runs when we can but gracefully fall back if there isn't enough data.
   const preferredDefault = WINDOW_OPTIONS.includes(5) ? 5 : WINDOW_OPTIONS[0];
   const [windowSize, setWindowSize] = useState<WindowOption>(preferredDefault);
+  // Maintain the selected metrics inside a Set so toggles are easy to flip on/off.
   const [visibleMetrics, setVisibleMetrics] = useState<Set<MetricKey>>(() => new Set(METRICS.map((metric) => metric.key)));
 
   const effectiveCount = Math.min(windowSize, runs.length);
@@ -138,6 +141,7 @@ export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: R
   const nivoTheme = useNivoTheme(isDark);
 
   const toggleMetric = (key: MetricKey) => {
+    // Preserve at least one metric so the chart never renders empty lines.
     setVisibleMetrics((current) => {
       const next = new Set(current);
       if (next.has(key)) {
@@ -151,6 +155,7 @@ export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: R
   };
 
   const handlePointClick = (point: Point) => {
+    // Jump straight to the run detail when the user clicks a point on the chart.
     const runId = point.data.runId as string | undefined;
     if (runId) {
       navigate(`/projects/${projectId}/runs/${runId}`);

@@ -4,6 +4,8 @@ import { InfoPopover } from "@components/InfoPopover";
 const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "—");
 const truncateCommit = (commit: string | undefined): string => (commit && commit.length > 7 ? commit.slice(0, 7) : commit ?? "—");
 
+// Core layout for the run overview section. Accepts optional SBOM/Trivy highlights so the caller
+// can decide how much context to render without duplicating formatting logic.
 type SbomHighlights = {
   totalComponents?: number;
   uniqueTypes?: number;
@@ -63,6 +65,7 @@ export const RunDetailCard = ({
   trivyHighlights?: TrivyHighlights;
 }) => {
   const metadata = detail.metadata ?? {};
+  // Defensive parsing because run.json values come from multiple CI scripts.
   const repo = typeof metadata.repository === "string" ? metadata.repository : "—";
   const workflow = typeof metadata.workflow === "string" ? metadata.workflow : "—";
   const ref = typeof metadata.ref === "string" ? metadata.ref : "—";

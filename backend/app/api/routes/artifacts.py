@@ -30,6 +30,7 @@ def fetch_artifact(project_id: str = Path(..., description="Project identifier")
     if not matches:
         raise HTTPException(status_code=404, detail=f"Artifact '{artifact_type}' not available for run '{run_id}'.")
     try:
+        # Reuse the catalog helper so caching and repository error handling stay consistent.
         return catalog.fetch_artifact(matches[0])
     except RepositoryError as exc:
         logger.exception("Failed to fetch artifact '%s' for project '%s' run '%s'", artifact_type, project_id, run_id)

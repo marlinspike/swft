@@ -56,6 +56,7 @@ def memoize(cache: SimpleTTLCache) -> Callable[[Callable[P, T]], Callable[P, T]]
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # Build a stable cache key using the fully-qualified function name and arguments.
             key = f"{func.__module__}.{func.__qualname__}:{args}:{kwargs}"
             if key in cache: return cache[key]
             result = func(*args, **kwargs)

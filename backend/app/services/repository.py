@@ -77,6 +77,7 @@ class AzureBlobRepository:
         """Yield BlobRecord entries for every blob in the target container."""
         client = self._container(container)
         try:
+            # Azure SDK returns a lazy iterator; we mirror that behaviour while normalising fields.
             for blob in client.list_blobs():
                 yield BlobRecord(container=container, name=blob.name, last_modified=getattr(blob, "last_modified", None), size=getattr(blob, "size", None))
         except Exception as exc:
@@ -111,6 +112,7 @@ class LocalBlobRepository:
         base = self._path(container)
         for path in base.rglob("*"):
             if path.is_file():
+                # Preserve the blob naming convention by converting path separators to forward slashes.
                 stat = path.stat()
                 name = str(path.relative_to(base)).replace(os.sep, "/")
                 yield BlobRecord(container=container, name=name, last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc), size=stat.st_size)

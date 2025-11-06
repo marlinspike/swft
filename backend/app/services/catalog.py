@@ -26,6 +26,7 @@ class ArtifactCatalogService:
     def __init__(self, repository: BlobRepository, settings: AppSettings):
         self._repository = repository
         self._settings = settings
+        # The TTL cache keeps recently accessed run metadata warm so repeated UI calls avoid blob round-trips.
         self._cache = create_cache(settings.cache_max_items, settings.cache_ttl_seconds)
 
     def _cache_get(self, key: str, loader: Callable[[], object]) -> object:
@@ -65,6 +66,7 @@ class ArtifactCatalogService:
         def loader() -> Sequence[RunSummary]:
             runs: dict[str, RunSummary] = {}
             artifacts_by_run: dict[str, list[ArtifactDescriptor]] = defaultdict(list)
+            # Sweep the run container first so we know which run IDs exist before looking for SBOM/Trivy extras.
             for record in self._repository.list_blobs(self._settings.storage.container_runs):
                 project, run_id, artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                 if project != project_id: continue
@@ -75,6 +77,7 @@ class ArtifactCatalogService:
                     project, run_id, artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                     if project != project_id: continue
                     descriptor = ArtifactDescriptor(project_id=project, run_id=run_id, artifact_type=artifact_type, blob_name=record.name, container=container, last_modified=record.last_modified, size_bytes=record.size)
+                    # Store descriptors even when we can't immediately load the payload; downstream lookups handle errors.
                     artifacts_by_run[run_id].append(descriptor)
             summaries: list[RunSummary] = []
             for run_id, descriptors in artifacts_by_run.items():
@@ -104,6 +107,7 @@ class ArtifactCatalogService:
             metadata = self._load_run_metadata(project_id, run_id)
             descriptors = self._collect_artifacts(project_id, run_id)
             sbom_components = self._sbom_component_total(descriptors)
+            # Summaries mirror list_runs so the UI can render detail and list views interchangeably.
             summary = RunSummary(
                 project_id=project_id,
                 run_id=run_id,
@@ -134,6 +138,7 @@ class ArtifactCatalogService:
             try:
                 payload = self.fetch_artifact(descriptor)
             except RepositoryError:
+                # Skip corrupt SBOMs: the detail view will surface fetch errors separately.
                 continue
             components = payload.get("components")
             if isinstance(components, list):
@@ -148,6 +153,7 @@ class ArtifactCatalogService:
             (self._settings.storage.container_sboms, "sbom"),
             (self._settings.storage.container_scans, "trivy"),
         ):
+            # Containers are flat, so we filter by project/run prefix to avoid loading unrelated blobs.
             for record in self._repository.list_blobs(container):
                 project, record_run_id, _artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                 if project == project_id and record_run_id == run_id:

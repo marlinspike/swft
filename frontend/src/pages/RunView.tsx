@@ -10,6 +10,8 @@ import { CollapsibleSection } from "@components/CollapsibleSection";
 import { JsonModal } from "@components/JsonModal";
 import { InfoPopover } from "@components/InfoPopover";
 
+// Full run detail page: fetches the main run record, enriches it with SBOM/Trivy summaries,
+// and renders a stack of cards with provenance and security insights.
 type SbomSummary = {
   totalComponents: number;
   uniqueTypes: number;
@@ -68,6 +70,7 @@ const severityColors: Record<string, string> = {
     "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600/40 dark:bg-slate-600/30 dark:text-slate-200"
 };
 
+// Quick reference copy for the info popovers so designers can tweak content in one place.
 const infoHelp = {
   sbom: {
     description: "Summaries below come directly from sbom.cyclonedx.json and describe the components bundled in this container image.",
@@ -104,6 +107,7 @@ const infoHelp = {
   }
 } as const;
 
+// Extract the handful of SBOM stats the UI needs while tolerating partially populated documents.
 const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
   const components = Array.isArray(payload.components) ? payload.components : [];
   const typeCounts = new Map<string, number>();
@@ -195,6 +199,7 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
   };
 };
 
+// Parse the Trivy JSON into a friendly shape that mirrors what security reviewers care about.
 const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
   const results = Array.isArray(payload.Results) ? payload.Results : [];
   const severityCounts = new Map<string, number>();
@@ -621,6 +626,7 @@ export const RunPage = () => {
 
   useEffect(() => {
     let cancelled = false;
+    // Once the base run loads, pull the heavy SBOM/Trivy JSON in parallel and condense it.
     const loadArtifacts = async () => {
       if (!data || !projectId || !runId) return;
       setLoadingArtifacts(true);
@@ -669,8 +675,10 @@ export const RunPage = () => {
     };
   }, [data, projectId, runId]);
 
+  // Prepare formatted JSON strings ahead of time so the modal opens instantly.
   const runRaw = useMemo(() => (data ? formatJson(data.metadata) : null), [data]);
   const trivyPolicy = useMemo(() => {
+    // Normalise the Trivy policy fields so we can display the exact scan/fail thresholds.
     if (!data) return null;
     const metadata = data.metadata ?? {};
     const assessment = typeof metadata.assessment === "object" && metadata.assessment !== null ? (metadata.assessment as Record<string, unknown>) : null;
@@ -719,6 +727,7 @@ export const RunPage = () => {
   if (loading) return <LoadingState message={`Loading run ${runId}`} />;
   if (error || !data) return <ErrorState message={error ?? "Unable to load run detail"} />;
 
+  // Helper for the "View raw JSON" buttons so each section stays uncluttered.
   const renderArtifactAction = (label: string, content: string | null, fileName?: string) =>
     content
       ? (
