@@ -157,6 +157,13 @@ You can add or remove models at any time; the assistant configuration endpoint r
   - Large artefacts are trimmed client-side to keep requests within model limits; the assistant labels truncated sections so users know when to fetch the raw JSON modal.
 - **Schemas** in `backend/app/assistant/schema/` define the contracts the assistant cites. They supplement the raw artefacts and keep the model grounded on field names and semantics.
 
+### app-design.md (Shared knowledge base)
+
+- Developers should capture system intent, data flows, control mappings, and operational runbooks in `app-design.md`. See the template at the repo root for the recommended structure and tables.
+- The assistant includes every section of `app-design.md` in its system prompt, so AOs can ask architectural or compliance questions with full context.
+- Update the file whenever architecture changes, new environments come online, or AO guidance evolves. A short change log at the bottom helps the assistant highlight recent updates.
+- If you need to add diagrams, store the source in `images/` (or link to external diagramming tools) and reference them from `app-design.md` for quick discovery.
+
 ### API & streaming endpoints
 
 - `POST /assistant/chat` - synchronous responses, returning `ChatResponse`.
