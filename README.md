@@ -63,6 +63,7 @@ The UI provides:
 
 - Project dashboard with latest run timestamps
 - Per-project run tables summarizing cosign status and Trivy finding counts
+- Interactive trend charts (Nivo) graphing SBOM components and Trivy findings across recent runs with direct navigation to run detail
 - Run detail views with metadata, artifact listings, and inline JSON viewers
 - Light/Dark mode theme toggle with persisted preference
 

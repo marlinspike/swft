@@ -18,3 +18,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Node.js packages and build artefacts
+node_modules/
+frontend/node_modules/
+frontend/.vite/

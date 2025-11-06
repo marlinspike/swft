@@ -11,6 +11,7 @@ export interface RunSummary {
   run_id: string;
   created_at: string | null;
   artifact_counts: Record<string, number>;
+  sbom_component_total: number | null;
   cosign_status: string | null;
   trivy_findings_total: number | null;
   trivy_findings_failset: number | null;

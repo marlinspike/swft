@@ -22,6 +22,7 @@ class RunSummary:
     run_id: str
     created_at: datetime | None
     artifact_counts: Mapping[str, int] = field(default_factory=dict)
+    sbom_component_total: int | None = None
     cosign_status: str | None = None
     trivy_findings_total: int | None = None
     trivy_findings_failset: int | None = None
