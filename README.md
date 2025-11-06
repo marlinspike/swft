@@ -162,7 +162,7 @@ You can add or remove models at any time; the assistant configuration endpoint r
 - Developers should capture system intent, data flows, control mappings, and operational runbooks in `app-design.md`. See the template at the repo root for the recommended structure and tables.
 - The assistant includes every section of `app-design.md` in its system prompt, so AOs can ask architectural or compliance questions with full context.
 - Update the file whenever architecture changes, new environments come online, or AO guidance evolves. A short change log at the bottom helps the assistant highlight recent updates.
-- If you need to add diagrams, store the source in `images/` (or link to external diagramming tools) and reference them from `app-design.md` for quick discovery.
+- Include Mermaid diagrams which can render visually and are understanded by the assistant for richer context.
 
 ### API & streaming endpoints
 
