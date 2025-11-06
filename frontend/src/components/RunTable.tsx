@@ -21,6 +21,7 @@ const severityRank = (status: string | null): number => {
   return 3;
 };
 
+// Apply column-specific ordering rules so the table sort feels natural to reviewers.
 const sortRuns = (runs: RunSummary[], column: string, direction: "asc" | "desc") => {
   const sorted = [...runs].sort((a, b) => {
     switch (column) {
@@ -55,9 +56,11 @@ export const RunTable = ({ projectId, runs }: { projectId: string; runs: RunSumm
   const [sortColumn, setSortColumn] = useState<string>("created");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
+  // Recompute the row order whenever the user changes the sort criteria.
   const rows = useMemo(() => sortRuns(runs, sortColumn, sortDirection), [runs, sortColumn, sortDirection]);
 
   const handleSort = (column: string, sortable: boolean) => {
+    // Toggle between ascending/descending or swap to a new column on click.
     if (!sortable) return;
     if (column === sortColumn) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));

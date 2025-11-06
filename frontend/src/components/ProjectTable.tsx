@@ -10,6 +10,7 @@ const headers = [
   { key: "latest", label: "Latest run", sortable: true }
 ] as const;
 
+// Column-aware sorter so we can reuse the same table for name, run count, and timestamp views.
 const sortProjects = (projects: ProjectSummary[], column: string, direction: "asc" | "desc") => {
   const sorted = [...projects].sort((a, b) => {
     switch (column) {
@@ -36,9 +37,11 @@ export const ProjectTable = ({ projects }: { projects: ProjectSummary[] }) => {
   const [sortColumn, setSortColumn] = useState<string>("latest");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
+  // Keep the sorted rows memoised so re-renders stay cheap.
   const rows = useMemo(() => sortProjects(projects, sortColumn, sortDirection), [projects, sortColumn, sortDirection]);
 
   const handleSort = (column: string, sortable: boolean) => {
+    // Follow the same UX pattern as RunTable: flip direction or jump to a new column.
     if (!sortable) return;
     if (column === sortColumn) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));

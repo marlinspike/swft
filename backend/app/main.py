@@ -12,6 +12,7 @@ from .core.logging import configure_logging
 def create_app() -> FastAPI:
     """Assemble the FastAPI application with middleware, routes, and logging."""
     configure_logging()
+    # Single FastAPI instance hosts the public API consumed by the portal frontend.
     app = FastAPI(title="SWFT Backend", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,

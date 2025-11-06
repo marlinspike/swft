@@ -52,6 +52,7 @@ def list_runs(project_id: str = Path(..., description="Project identifier"), lim
     if user.allowed_projects and project_id not in user.allowed_projects:
         raise HTTPException(status_code=403, detail="Access to project denied.")
     if limit is not None and limit not in VALID_WINDOWS:
+        # Keep the window sizes aligned with what the frontend offers so caching stays effective.
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported limit '{limit}'. Valid values: {sorted(VALID_WINDOWS)}",
@@ -72,6 +73,7 @@ def get_run(project_id: str = Path(..., description="Project identifier"), run_i
     if user.allowed_projects and project_id not in user.allowed_projects:
         raise HTTPException(status_code=403, detail="Access to project denied.")
     try:
+        # Run detail already includes artifacts; no need for separate repository calls here.
         detail = catalog.run_detail(project_id, run_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

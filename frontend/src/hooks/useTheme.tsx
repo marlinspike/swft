@@ -12,6 +12,7 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "scai-portal-theme";
 
+// Prefer the stored theme, then fall back to the user's system preference.
 const getInitialTheme = (): Theme => {
   if (typeof window === "undefined") return "dark";
   const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -19,6 +20,7 @@ const getInitialTheme = (): Theme => {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
+// Keep a single CSS hook (the `dark` class) in sync with the current theme selection.
 const applyThemeClass = (theme: Theme) => {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
@@ -32,6 +34,7 @@ const applyThemeClass = (theme: Theme) => {
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [theme, setThemeState] = useState<Theme>(getInitialTheme);
 
+  // Any time the user toggles the theme, persist it and update the root class.
   useEffect(() => {
     applyThemeClass(theme);
     if (typeof window !== "undefined") {
@@ -39,6 +42,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [theme]);
 
+  // React to system-level preference changes unless the user explicitly set a theme.
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (event: MediaQueryListEvent) => {
