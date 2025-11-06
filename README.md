@@ -107,6 +107,7 @@ The responsive Nivo implementation honors the portal’s light/dark theme and gr
 | Vulnerability Scan | Trivy severity summary and ranked findings | ![Trivy findings](images/30_Dashboard.png) |
 | Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Popup.png) |
 | Authorization Signals | Multi-panel chart showing risk posture, SBOM, cosign, evidence completeness, and cadence | ![Authorization signal charts](images/50_Charts_Authorization_Signals.png) |
+| AI Assistant | Conversational view that injects run, SBOM, and Trivy evidence automatically | ![AI assistant chat](images/60_AI_Chat.png) |
 
 ---
 
