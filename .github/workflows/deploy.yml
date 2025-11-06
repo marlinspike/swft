@@ -65,6 +65,7 @@ env:
   RUN_NUMBER:   ${{ github.run_number }}
 
   # FIXED artifact filenames (we always create & upload these)
+  # Keep the canonical names here so every step references the same variables.
   SBOM_SRC:     sbom.cyclonedx.json
   TRIVY_SRC:    trivy-report.json
   SARIF_SRC:    trivy-results.sarif
@@ -72,6 +73,7 @@ env:
   RUNJSON_SRC:  run.json
 
 jobs:
+  # End-to-end pipeline: build the container, scan/sign it, ship artifacts, and redeploy the demo.
   build-and-deploy:
     runs-on: ubuntu-latest
     defaults: { run: { shell: bash } }
@@ -80,12 +82,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Log in with the service principal so az CLI and Docker share the same credentials.
       - name: Azure Login (Service Principal, AzureCloud)
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           environment: azureCloud
 
+      # Stamp each run with predictable filenames and a UTC timestamp for traceability later.
       - name: Derive pretty names & timestamp
         run: |
           set -euo pipefail
@@ -101,6 +105,7 @@ jobs:
             echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
           } >> $GITHUB_ENV
 
+      # Fold all manual inputs and repo defaults into a single set of outputs for downstream steps.
       - name: Parse inputs (Trivy + containers + switches)
         id: cfg
         run: |
@@ -137,6 +142,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Log in to the registry before we try to push the freshly built image.
       - name: Login to ACR
         uses: docker/login-action@v3
         with:
@@ -144,6 +150,7 @@ jobs:
           username: ${{ env.ACR_USERNAME }}
           password: ${{ env.ACR_PASSWORD }}
 
+      # Build the sample FastAPI image and push it straight to ACR.
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -152,9 +159,11 @@ jobs:
           push: true
           tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
+      # Pull the exact tag back down so scanners and cosign work against the same bits we just published.
       - name: Pull image for local scan
         run: docker pull "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
 
+      # Capture the immutable digest; every signing and upload step keys off this value.
       - name: Get image digest
         run: |
           set -euo pipefail
@@ -164,6 +173,7 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.9.0
 
+      # Cosign expects plain files, so decode the base64 secrets before signing.
       - name: Decode Cosign keys
         run: |
           set -euo pipefail
@@ -172,6 +182,7 @@ jobs:
           echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
           chmod 644 cosign.pub
 
+      # Sign the pushed image by digest; we skip the transparency log for repeatability in demos.
       - name: Sign image (by digest, no tlog)
         run: |
           set -euo pipefail
@@ -181,6 +192,7 @@ jobs:
       - name: Verify image signature (by digest; ignore tlog)
         env:
           POLICY_FAIL_ON_VERIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.fail_on_cosign_verify || 'true' }}
+        # Keep the run going even if verification fails so we can optionally report the failure later.
         run: |
           set +e
           REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
@@ -301,6 +313,7 @@ jobs:
         # category intentionally omitted (single SARIF)
 
       # ---------- Azure uploads (work on push and manual; FLAT filenames) ----------
+      # Make sure the three blob containers exist before we start uploading files.
       - name: Ensure Azure containers
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
@@ -311,6 +324,7 @@ jobs:
             az storage container create --name "${{ steps.cfg.outputs.cn_scan }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
             az storage container create --name "${{ steps.cfg.outputs.cn_runs }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
 
+      # Copy the SBOM to a run-scoped filename and push it into the chosen container.
       - name: Upload SBOM to Azure Storage (flat name)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
@@ -322,6 +336,7 @@ jobs:
             SBOM_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_sbom }}" --name "${SBOM_FILE}" -o tsv)
             echo "SBOM_URL=$SBOM_URL" >> $GITHUB_ENV
 
+      # Do the same for the Trivy report so the backend can grab it by RUN_ID.
       - name: Upload Trivy report to Azure Storage (flat name)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
@@ -334,6 +349,7 @@ jobs:
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
       # ---------- Upload each artifact as a single file ----------
+      # Always stash a copy in GitHub Artifacts so we have an easy download, even if Azure is disabled.
       - name: Upload SBOM artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('sbom.cyclonedx.json') != '' }}
         uses: actions/upload-artifact@v4
@@ -356,6 +372,7 @@ jobs:
           path: trivy-results.sarif
 
       # ---------- Deploy to Azure Container Instances (CLI) ----------
+      # Recreate the demo container so we can show the freshly scanned image running in ACI.
       - name: Deploy to Azure Container Instance
         env:
           AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
@@ -401,6 +418,7 @@ jobs:
       - name: Ensure jq present (for RUN JSON)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
 
+      # Gather all the metadata we collected into the canonical run.json document.
       - name: Build run JSON payload (fixed jq program)
         id: build_run_json
         run: |
@@ -476,6 +494,7 @@ jobs:
           test -s run.json
           ls -l run.json
 
+      # Publish run.json alongside the SBOM and scan so the backend can stay in sync.
       - name: Upload RUN JSON to Azure Storage (flat name)
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         uses: azure/CLI@v2
@@ -487,6 +506,7 @@ jobs:
             RUN_JSON_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_runs }}" --name "${RUN_JSON_FILE}" -o tsv)
             echo "RUN_JSON_URL=$RUN_JSON_URL" >> $GITHUB_ENV
 
+      # Keep a GitHub artifact copy of run.json for easy troubleshooting.
       - name: Upload RUN JSON artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('run.json') != '' }}
         uses: actions/upload-artifact@v4
