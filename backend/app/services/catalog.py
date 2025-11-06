@@ -54,9 +54,14 @@ class ArtifactCatalogService:
             return summaries
         return self._cache_get(key, loader)  # type: ignore[return-value]
 
-    def list_runs(self, project_id: str) -> Sequence[RunSummary]:
-        """List run summaries for a given project, including policy findings."""
-        key = f"runs:{project_id}"
+    def list_runs(self, project_id: str, limit: int | None = None) -> Sequence[RunSummary]:
+        """List run summaries for a given project, optionally capped to the most recent N results.
+
+        When ``limit`` is provided it is expected to be a small positive integer (validated upstream).
+        The summaries are ordered newest-first and include derived SBOM and Trivy metadata needed by the UI.
+        """
+        capped = limit if isinstance(limit, int) and limit > 0 else None
+        key = f"runs:{project_id}:{capped or 'all'}"
         def loader() -> Sequence[RunSummary]:
             runs: dict[str, RunSummary] = {}
             artifacts_by_run: dict[str, list[ArtifactDescriptor]] = defaultdict(list)
@@ -74,11 +79,13 @@ class ArtifactCatalogService:
             summaries: list[RunSummary] = []
             for run_id, descriptors in artifacts_by_run.items():
                 metadata = self._safe_load_run(project_id, run_id)
+                sbom_components = self._sbom_component_total(descriptors)
                 summary = RunSummary(
                     project_id=project_id,
                     run_id=run_id,
                     created_at=_coerce_datetime(metadata.get("createdAt")),
                     artifact_counts=_count_by_type(descriptors),
+                    sbom_component_total=sbom_components,
                     cosign_status=_nested_str(metadata, ["assessment", "cosign", "verifyStatus"]),
                     trivy_findings_total=_nested_int(metadata, ["assessment", "trivy", "findings", "total"]),
                     trivy_findings_failset=_nested_int(metadata, ["assessment", "trivy", "findings", "failSet"]),
@@ -87,7 +94,7 @@ class ArtifactCatalogService:
                 runs[run_id] = summary
             fallback = datetime.min.replace(tzinfo=timezone.utc)
             ordered = sorted(runs.values(), key=lambda item: item.created_at or fallback, reverse=True)
-            return ordered
+            return ordered[:capped] if capped else ordered
         return self._cache_get(key, loader)  # type: ignore[return-value]
 
     def run_detail(self, project_id: str, run_id: str) -> RunDetail:
@@ -96,11 +103,13 @@ class ArtifactCatalogService:
         def loader() -> RunDetail:
             metadata = self._load_run_metadata(project_id, run_id)
             descriptors = self._collect_artifacts(project_id, run_id)
+            sbom_components = self._sbom_component_total(descriptors)
             summary = RunSummary(
                 project_id=project_id,
                 run_id=run_id,
                 created_at=_coerce_datetime(metadata.get("createdAt")),
                 artifact_counts=_count_by_type(descriptors),
+                sbom_component_total=sbom_components,
                 cosign_status=_nested_str(metadata, ["assessment", "cosign", "verifyStatus"]),
                 trivy_findings_total=_nested_int(metadata, ["assessment", "trivy", "findings", "total"]),
                 trivy_findings_failset=_nested_int(metadata, ["assessment", "trivy", "findings", "failSet"]),
@@ -116,6 +125,20 @@ class ArtifactCatalogService:
             return _loads_json(raw.encode("utf-8"))
         except Exception as exc:
             raise RepositoryError(f"Artifact '{descriptor.blob_name}' is not valid JSON.") from exc
+
+    def _sbom_component_total(self, descriptors: Sequence[ArtifactDescriptor]) -> int | None:
+        """Count the number of components in the first SBOM artifact, if present."""
+        for descriptor in descriptors:
+            if descriptor.artifact_type != "sbom":
+                continue
+            try:
+                payload = self.fetch_artifact(descriptor)
+            except RepositoryError:
+                continue
+            components = payload.get("components")
+            if isinstance(components, list):
+                return len(components)
+        return None
 
     def _collect_artifacts(self, project_id: str, run_id: str) -> list[ArtifactDescriptor]:
         """Gather all known artifact descriptors for the requested run."""

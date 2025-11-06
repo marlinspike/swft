@@ -20,6 +20,7 @@ class RunSummaryModel(BaseModel):
     run_id: str
     created_at: datetime | None
     artifact_counts: Mapping[str, int]
+    sbom_component_total: int | None
     cosign_status: str | None
     trivy_findings_total: int | None
     trivy_findings_failset: int | None

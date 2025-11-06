@@ -47,3 +47,41 @@ def test_projects_endpoint(tmp_path: Path) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data[0]["project_id"] == "demo"
+
+
+def test_runs_endpoint_returns_limited_history(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    (tmp_path / "runs" / "demo-101-run.json").write_text(
+        """{
+  "id": "101",
+  "projectName": "demo",
+  "createdAt": "2024-08-01T12:00:00Z",
+  "assessment": {
+    "cosign": { "verifyStatus": "failed" },
+    "trivy": { "findings": { "total": 9, "failSet": 2 } }
+  }
+}""",
+        encoding="utf-8"
+    )
+    (tmp_path / "sboms" / "demo-101-sbom.json").write_text(
+        """{ "bomFormat": "CycloneDX", "specVersion": "1.4", "components": [ { "name": "fastapi" }, { "name": "uvicorn" } ] }""",
+        encoding="utf-8"
+    )
+    (tmp_path / "scans" / "demo-101-trivy.json").write_text("""{ "results": [] }""", encoding="utf-8")
+
+    settings = _settings(tmp_path)
+    repository = LocalBlobRepository(str(tmp_path))
+    catalog = ArtifactCatalogService(repository, settings)
+    app = create_app()
+
+    app.dependency_overrides[deps.get_settings_dep] = lambda: settings
+    app.dependency_overrides[deps.get_catalog] = lambda: catalog
+    client = TestClient(app)
+
+    response = client.get("/projects/demo/runs?limit=3")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) == 2  # only two runs exist
+    assert data[0]["run_id"] == "101"
+    assert data[0]["sbom_component_total"] == 2
