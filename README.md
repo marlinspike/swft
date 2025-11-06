@@ -1,4 +1,4 @@
-# SWFT Portal Monorepo
+# SWFT Authorization Portal
 
 This repository hosts a supply-chain security MVP for the DoD Software FastTrack (SWFT) initiative. It is built on the [DoD Enterprise DevSecOps Reference Design for Azure and GitHub](https://dodcio.defense.gov/Portals/0/Documents/Library/DoDRefDesignCloudGithub.pdf), co-developed by the DoD CIO and Microsoft (see Reuben Cleetus and Tim Meyers). That reference architecture affirms GitHub.com private organizations and repositories can support IL5 workloads when paired with the prescribed SaaS/IaC controls, giving federal, DoD, and regulated programs a sanctioned pattern to “code low, deploy high” with GitHub Enterprise at IL2 while promoting artifacts into IL4/5 environments secured by DoD Cloud IaC baselines and provisional ATOs. It outlines how SaaS toolchains, Azure Government landing zones, and CSP-managed services combine to deliver secure DevSecOps pipelines, while highlighting Authorizing Official guidance for monitoring, inheritance, and full ATO transitions aligned to IL4/5 operations. This implementation follows those patterns so Fed/DoD and regulated-industry customers can demonstrate compliant adoption with minimal tailoring.
 
@@ -7,6 +7,7 @@ This repository hosts a supply-chain security MVP for the DoD Software FastTrack
 - **Continuous evidence, not quarterly binders.** Every container build automatically emits a signed SBOM, Trivy scan, and run manifest that the portal ingests within minutes, so Authorizing Officials can inspect living artifacts instead of chasing emailed checklists.
 - **Speed with trust baked in.** Cosign signatures, policy-enforced scans, and immutable blob storage prove the image deployed to IL4/5 is exactly what passed IL2 review—making “build low, deploy high” a repeatable, auditable muscle rather than a one-off hero effort.
 - **Humans decide; automation prepares.** The workflow and dashboard assemble the compliance story upfront, highlighting drift and policy violations so assessors spend time on judgment calls, not document triage.
+- **Industry best-in-class SAST out of the box.** GitHub CodeQL runs alongside the pipeline, catching code weaknesses with the same static analysis engine used across Microsoft, GitHub, and open source ecosystems.
 - **AI-ready from day one.** Because every run lands as structured data, we can layer assistants that summarize large reports, surface anomalies, or recommend mitigations—letting analysts leverage AI where it amplifies mission outcomes.
 - **Single pane of glass for the enterprise.** Developers keep iterating quickly, security inherits the controls automatically, and decision-makers monitor readiness across programs from a single view, driving faster authorizations without sacrificing rigor.
 
@@ -120,7 +121,7 @@ On push to `main` or manual dispatch the pipeline:
 3. Signs the digest with Cosign using keys supplied via GitHub secrets.
 4. Generates a CycloneDX SBOM (Syft/Anchore).
 5. Runs Trivy twice (JSON + SARIF) and enforces optional severity policy.
-6. Uploads SARIF to GitHub code scanning.
+6. Uploads SARIF to GitHub code scanning, where CodeQL pairs with container results for best-in-class static analysis coverage.
 7. Optionally uploads SBOM, Trivy JSON, and run manifest to Azure Blob Storage using flat names `<project>-<run>-*.json`.
 8. Deploys the image to Azure Container Instances and records the public endpoint.
 9. Publishes artifacts back to GitHub Actions for traceability.
