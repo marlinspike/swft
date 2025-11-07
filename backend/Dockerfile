@@ -21,6 +21,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 WORKDIR /srv/app
+# Install patched system XML libraries to address recent CVEs in Debian 12.11.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        libxml2 \
+        libexpat1 \
+        perl-base \
+    && rm -rf /var/lib/apt/lists/*
 # Run as an unprivileged user for better isolation.
 RUN groupadd --system swft && useradd --system --gid swft swft
 COPY --from=builder /opt/venv /opt/venv
