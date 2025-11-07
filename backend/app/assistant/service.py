@@ -283,19 +283,24 @@ class AssistantService:
                             yield json_line({"type": "delta", "delta": delta})
                 final_response = stream.get_final_response()
         except RateLimitError:
+            logger.exception("OpenAI streaming rate limit exceeded")
             yield json_line({"type": "error", "error": "Rate limit exceeded. Please retry shortly or choose a different model."})
             return
         except APIConnectionError:
+            logger.exception("OpenAI streaming connection error")
             yield json_line({"type": "error", "error": "Unable to reach the OpenAI endpoint. Check network connectivity and try again."})
             return
         except TimeoutException:
+            logger.exception("OpenAI streaming request timed out")
             yield json_line({"type": "error", "error": "OpenAI endpoint timed out. Please retry."})
             return
         except APIStatusError as exc:
-            yield json_line({"type": "error", "error": f"OpenAI returned an error ({exc.status_code}): {exc.message}"})
+            logger.exception("OpenAI streaming returned API status error %s", getattr(exc, "status_code", "unknown"))
+            yield json_line({"type": "error", "error": f"OpenAI returned an error ({exc.status_code})."})
             return
-        except (BadRequestError, OpenAIError) as exc:
-            yield json_line({"type": "error", "error": f"OpenAI request failed: {exc}"})
+        except (BadRequestError, OpenAIError):
+            logger.exception("OpenAI streaming request failed")
+            yield json_line({"type": "error", "error": "OpenAI request failed. Please try again later."})
             return
 
         final_text = "".join(accumulator).strip()
