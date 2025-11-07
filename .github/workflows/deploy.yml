@@ -337,6 +337,10 @@ jobs:
             ] | length' "trivy-report.json")
           echo "TRIVY_FINDINGS_TOTAL=$TOTAL_COUNT" >> $GITHUB_ENV
           echo "TRIVY_FINDINGS_FAILSET=$FAIL_COUNT" >> $GITHUB_ENV
+          if [ "${TARGET_DEPLOY}" != "true" ]; then
+            echo "Skipping Trivy enforcement for scan-only target ${TARGET_NAME}; findings recorded for reporting only."
+            exit 0
+          fi
           if [ "$POLICY_FAIL_ON_TRIVY" = "true" ] && [ "$FAIL_COUNT" -gt 0 ]; then
             echo "Failing due to findings in fail set ($FAIL_LEVELS): $FAIL_COUNT"
             exit 1
