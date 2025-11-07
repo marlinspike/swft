@@ -4,11 +4,17 @@
     "models": {
       "gpt-5-mini": {
         "deployment": "gpt-5-mini",
-        "response_format": "json"
+        "response_format": "json",
+        "total_context_window": 400000,
+        "max_output_tokens": 128000,
+        "max_input_tokens": 272000
       },
       "gpt-4o": {
         "deployment": "gpt-4o",
-        "response_format": "json"
+        "response_format": "json",
+        "total_context_window": 128000,
+        "max_output_tokens": 4000,
+        "max_input_tokens": 124000
       }
     }
   },
@@ -17,19 +23,31 @@
     "models": {
       "gpt-4o": {
         "model": "gpt-4o",
-        "response_format": "json"
+        "response_format": "json",
+        "total_context_window": 128000,
+        "max_output_tokens": 4000,
+        "max_input_tokens": 124000
       },
       "gpt-4o-mini": {
         "model": "gpt-4o-mini",
-        "response_format": "json"
+        "response_format": "json",
+        "total_context_window": 128000,
+        "max_output_tokens": 16384,
+        "max_input_tokens": 111616
       },
       "gpt-5-nano": {
         "model": "gpt-5-nano",
-        "response_format": "json"
+        "response_format": "json",
+        "total_context_window": 400000,
+        "max_output_tokens": 128000,
+        "max_input_tokens": 272000
       },
       "gpt-4.1": {
         "model": "gpt-4.1",
-        "response_format": "json"
+        "response_format": "json",
+        "total_context_window": 128000,
+        "max_output_tokens": 4000,
+        "max_input_tokens": 124000
       }
     }
   }

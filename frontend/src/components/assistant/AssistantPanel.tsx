@@ -579,7 +579,7 @@ export const AssistantPanel = ({
                           )}
                           {entry.metadata && (
                             <footer className="mt-3 border-t border-white/20 pt-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-400">
-                              Provider: {entry.metadata.provider} · Model: {entry.metadata.model_key} · History tokens:{" "}
+                              Provider: {entry.metadata.provider} · Model: {entry.metadata.model_key} · Chat history sent:{" "}
                               {entry.metadata.history_included}
                             </footer>
                           )}

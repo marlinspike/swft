@@ -144,8 +144,17 @@ Restart the FastAPI server after editing the environment so the assistant reload
 - For Azure entries, a `deployment` that matches the deployment name in your Azure OpenAI resource.
 - For OpenAI entries, a `model` identifier such as `gpt-4o` or `gpt-4o-mini`.
 - Optional `response_format` hints (set to `"json"` for structured replies).
+- Optional `total_context_window`, `max_input_tokens`, and `max_output_tokens`. If omitted, the backend falls back to sensible defaults (see table in this section), and it passes `max_output_tokens` to the Responses API so outputs stay within the configured budget.
 
 You can add or remove models at any time; the assistant configuration endpoint reads the file on startup so the UI stays in sync.
+
+| Model family | Total context | Max output | Implied max input |
+|--------------|---------------|------------|-------------------|
+| GPT-4o / GPT-4.1 | 128k tokens | 4k tokens | ~124k tokens |
+| GPT-4o-mini | 128k tokens | 16,384 tokens | ~111,616 tokens |
+| GPT-5 / GPT-5-mini / GPT-5-nano | 400k tokens | 128k tokens | ~272k tokens |
+
+Use these defaults unless your deployment advertises tighter limits.
 
 ### Personas & auto-context
 
