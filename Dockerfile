@@ -7,7 +7,7 @@ WORKDIR /srv
 
 COPY backend/pyproject.toml backend/setup.cfg ./backend/
 RUN python -m ensurepip --upgrade && \
-    pip install --upgrade pip
+    python -m pip install --upgrade pip "setuptools>=78.1.1"
 
 COPY backend/app ./backend/app
 RUN pip install ./backend
