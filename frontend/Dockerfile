@@ -23,11 +23,22 @@ RUN npm run build && npm prune --omit=dev
 
 FROM nginxinc/nginx-unprivileged:1.27-bookworm AS runtime
 USER root
-# Pull in security updates for libxml2/libexpat/perl to match the patched Debian 12.11 variants.
+# Pull in security updates for xml/gnutls/glibc/icu/xslt/tiff/perl/krb5/openssl flagged by the latest scan.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         libxml2 \
         libexpat1 \
+        libgnutls30 \
+        libc-bin \
+        libc6 \
+        libicu72 \
+        libxslt1.1 \
+        libtiff6 \
+        libkrb5-3 \
+        libkrb5support0 \
+        libgssapi-krb5-2 \
+        openssl \
+        libssl3 \
         perl-base \
     && rm -rf /var/lib/apt/lists/*
 USER 101

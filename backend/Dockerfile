@@ -21,11 +21,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 WORKDIR /srv/app
-# Install patched system XML libraries to address recent CVEs in Debian 12.11.
+# Install patched system libraries flagged by the latest scan (xml/gnutls/glibc/icu/xslt/tiff/perl/krb5/openssl).
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         libxml2 \
         libexpat1 \
+        libgnutls30 \
+        libc-bin \
+        libc6 \
+        libicu72 \
+        libxslt1.1 \
+        libtiff6 \
+        libkrb5-3 \
+        libkrb5support0 \
+        libgssapi-krb5-2 \
+        openssl \
+        libssl3 \
         perl-base \
     && rm -rf /var/lib/apt/lists/*
 # Run as an unprivileged user for better isolation.
