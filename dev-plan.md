@@ -12,14 +12,13 @@
 
 ## Phase 3 — Integration & Enhancements
 1. ~~GenerativeAI-based search and summarization of vulnerability findings.~~ -- DONE
-2. API contract tests ensuring blob fixtures return expected structures.
-3. Background refresh worker (optional) to pre-cache parsed data or compute aggregates.
-4. Export/reporting endpoints (PDF/CSV) summarizing high-risk findings.
-5. Webhook or queue trigger to notify SCAs when new runs arrive or thresholds exceeded.
-6. Optional DoD SWFT API integration (submit `run.json`, SBOM links).
+2. Webhook or queue trigger to notify SCAs when new runs arrive or thresholds exceeded.
+3. Optional DoD SWFT API integration (submit `run.json`, SBOM links).
 
 ## Phase 4 — Operations
-- **Deployment**: containerize backend/frontend, deploy to Azure App Service or Container Apps with managed identity.  
+- **Deployment**  
+  - Containerize backend/frontend.  
+  - Deploy to Azure App Service or Container Apps with managed identity.  
 - **Monitoring**: Azure Monitor dashboards, alerts on 4xx/5xx, blob access metrics.  
 - **Security**: routine key rotation, penetration testing, review of blob access policies.  
 - **Documentation**: runbook for SCAs, onboarding guide for project teams, API reference.
