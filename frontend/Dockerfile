@@ -22,6 +22,15 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build && npm prune --omit=dev
 
 FROM nginxinc/nginx-unprivileged:1.27-bookworm AS runtime
+USER root
+# Pull in security updates for libxml2/libexpat/perl to match the patched Debian 12.11 variants.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        libxml2 \
+        libexpat1 \
+        perl-base \
+    && rm -rf /var/lib/apt/lists/*
+USER 101
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
