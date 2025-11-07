@@ -11,8 +11,8 @@ WORKDIR /srv/app
 COPY pyproject.toml ./
 
 RUN python -m ensurepip --upgrade && \
-    pip install --upgrade pip && \
-    pip install .[dev]
+    python -m pip install --upgrade pip "setuptools>=78.1.1" && \
+    python -m pip install .[dev]
 
 COPY app ./app
 
