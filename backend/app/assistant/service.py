@@ -154,6 +154,8 @@ class AssistantService:
             "model": model_identifier,
             "input": messages,
         }
+        if descriptor.max_output_tokens:
+            request_kwargs["max_output_tokens"] = descriptor.max_output_tokens
         client = self._ensure_client()
         try:
             response = client.responses.create(**request_kwargs)
@@ -219,6 +221,9 @@ class AssistantService:
             persona=request.persona,
             facet=request.facet,
             history_included=history_count,
+            max_output_tokens=descriptor.max_output_tokens,
+            max_input_tokens=descriptor.max_input_tokens,
+            total_context_window=descriptor.total_context_window,
         )
         return ChatResponse(answer=answer_text, conversation_id=conversation_id, metadata=metadata)
 
@@ -236,6 +241,9 @@ class AssistantService:
             persona=request.persona,
             facet=request.facet,
             history_included=history_count,
+            max_output_tokens=descriptor.max_output_tokens,
+            max_input_tokens=descriptor.max_input_tokens,
+            total_context_window=descriptor.total_context_window,
         )
 
         client = self._ensure_client()
@@ -254,10 +262,13 @@ class AssistantService:
         accumulator: list[str] = []
         final_response = None
         try:
-            with client.responses.stream(
-                model=model_identifier,
-                input=messages,
-            ) as stream:
+            stream_kwargs = {
+                "model": model_identifier,
+                "input": messages,
+            }
+            if descriptor.max_output_tokens:
+                stream_kwargs["max_output_tokens"] = descriptor.max_output_tokens
+            with client.responses.stream(**stream_kwargs) as stream:
                 for event in stream:
                     event_type = getattr(event, "type", "")
                     if event_type == "response.output_text.delta":

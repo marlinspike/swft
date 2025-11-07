@@ -11,6 +11,40 @@ import json
 Provider = Literal["azure", "openai"]
 DEFAULT_MODEL_CONFIG_PATH = Path(__file__).resolve().parent / "model_config.json"
 
+# Default limits to use when a model definition omits token settings
+DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
+    "gpt-4o": {
+        "total_context_window": 128_000,
+        "max_output_tokens": 4_000,
+        "max_input_tokens": 124_000,
+    },
+    "gpt-4o-mini": {
+        "total_context_window": 128_000,
+        "max_output_tokens": 16_384,
+        "max_input_tokens": 111_616,
+    },
+    "gpt-5": {
+        "total_context_window": 400_000,
+        "max_output_tokens": 128_000,
+        "max_input_tokens": 272_000,
+    },
+    "gpt-5-mini": {
+        "total_context_window": 400_000,
+        "max_output_tokens": 128_000,
+        "max_input_tokens": 272_000,
+    },
+    "gpt-5-nano": {
+        "total_context_window": 400_000,
+        "max_output_tokens": 128_000,
+        "max_input_tokens": 272_000,
+    },
+    "gpt-4.1": {
+        "total_context_window": 128_000,
+        "max_output_tokens": 4_000,
+        "max_input_tokens": 124_000,
+    },
+}
+
 
 class ModelDescriptor(BaseModel):
     """Describes a single model entry declared in model_config.json."""
@@ -18,6 +52,9 @@ class ModelDescriptor(BaseModel):
     model: str | None = Field(default=None, description="Model identifier for non-Azure providers.")
     deployment: str | None = Field(default=None, description="Azure OpenAI deployment name.")
     response_format: Literal["json", "text"] | None = Field(default=None, description="Preferred response format for the model.")
+    total_context_window: int | None = Field(default=None, ge=1, description="Maximum total tokens (input + output) the model supports.")
+    max_output_tokens: int | None = Field(default=None, ge=1, description="Maximum number of tokens the model may output.")
+    max_input_tokens: int | None = Field(default=None, ge=1, description="Maximum number of tokens allowed for the prompt portion.")
 
     @model_validator(mode="after")
     def validate_identifier(self) -> "ModelDescriptor":
@@ -87,10 +124,29 @@ class AssistantSettings(BaseSettings):
         parsed: dict[str, ProviderModelConfig] = {}
         for provider_key, payload in raw_config.items():
             try:
-                parsed[provider_key] = ProviderModelConfig(**payload)
+                provider_cfg = ProviderModelConfig(**payload)
+                for model_key, descriptor in provider_cfg.models.items():
+                    provider_cfg.models[model_key] = self._apply_token_defaults(descriptor)
+                parsed[provider_key] = provider_cfg
             except ValidationError as exc:
                 raise ValueError(f"Invalid model definition for provider '{provider_key}': {exc}") from exc
         return parsed
+
+    @staticmethod
+    def _apply_token_defaults(descriptor: ModelDescriptor) -> ModelDescriptor:
+        key = (descriptor.model or descriptor.deployment or "").lower()
+        limit_key = next((name for name in DEFAULT_MODEL_LIMITS if name in key), None)
+        if not limit_key:
+            return descriptor
+        limits = DEFAULT_MODEL_LIMITS[limit_key]
+        updated = descriptor.model_copy(
+            update={
+                "total_context_window": descriptor.total_context_window or limits["total_context_window"],
+                "max_output_tokens": descriptor.max_output_tokens or limits["max_output_tokens"],
+                "max_input_tokens": descriptor.max_input_tokens or limits["max_input_tokens"],
+            }
+        )
+        return updated
 
     def provider_config(self) -> ProviderModelConfig:
         """Return the ProviderModelConfig matching the selected provider."""

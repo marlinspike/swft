@@ -67,6 +67,9 @@ export interface AssistantMetadata {
   persona: AssistantPersona;
   facet: AssistantFacet;
   history_included: number;
+  max_output_tokens?: number | null;
+  max_input_tokens?: number | null;
+  total_context_window?: number | null;
 }
 
 export interface AssistantResponse {

@@ -58,6 +58,9 @@ class AssistantMetadata(BaseModel):
     persona: Persona
     facet: Facet
     history_included: int
+    max_output_tokens: int | None = None
+    max_input_tokens: int | None = None
+    total_context_window: int | None = None
 
 
 class ChatResponse(BaseModel):
