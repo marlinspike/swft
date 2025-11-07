@@ -310,7 +310,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
-        # category intentionally omitted (single SARIF)
+          category: trivy-container
+        # Explicit category keeps successive Trivy uploads linked to the same analyzer so old alerts get closed.
 
       # ---------- Azure uploads (work on push and manual; FLAT filenames) ----------
       # Make sure the three blob containers exist before we start uploading files.
