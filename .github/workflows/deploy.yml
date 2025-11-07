@@ -5,6 +5,14 @@ on:
     branches: [ main ]
     paths:
       - 'samples/fastapi-demo/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'Dockerfile'
+      - 'backend/Dockerfile'
+      - 'frontend/Dockerfile'
+      - 'main.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -47,7 +55,7 @@ env:
   ACR_LOGIN_SERVER:     ${{ secrets.ACR_LOGIN_SERVER }}
   ACR_USERNAME:         ${{ secrets.ACR_USERNAME }}
   ACR_PASSWORD:         ${{ secrets.ACR_PASSWORD }}
-  IMAGE_NAME:           fastapi-demo
+  # Shared tag applied to every matrix entry; swap to github.sha if you prefer immutable tags.
   IMAGE_TAG:            ${{ secrets.IMAGE_TAG }}
 
   # Azure targets
@@ -77,6 +85,33 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     defaults: { run: { shell: bash } }
+    # Matrix controls which containers are built/scanned; add new entries for frontend/backend as you onboard them.
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: sample-fastapi
+            context: ./samples/fastapi-demo
+            dockerfile: ./samples/fastapi-demo/Dockerfile
+            image_name: fastapi-demo
+            deploy: true  # Set to true only for images that should be redeployed to ACI during the workflow run.
+          - name: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            image_name: swft-backend
+            deploy: false
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            image_name: swft-frontend
+            deploy: false
+    # TARGET_* env vars make the matrix data easy to consume in shell steps and action inputs.
+    env:
+      TARGET_NAME: ${{ matrix.target.name }}
+      TARGET_CONTEXT: ${{ matrix.target.context }}
+      TARGET_DOCKERFILE: ${{ matrix.target.dockerfile }}
+      TARGET_IMAGE_NAME: ${{ matrix.target.image_name }}
+      TARGET_DEPLOY: ${{ matrix.target.deploy && 'true' || 'false' }}
 
     steps:
       - name: Checkout
@@ -90,10 +125,11 @@ jobs:
           environment: azureCloud
 
       # Stamp each run with predictable filenames and a UTC timestamp for traceability later.
+      # Including TARGET_NAME keeps artifact prefixes unique per matrix entry; the backend treats this prefix as the project_id shown in the UI.
       - name: Derive pretty names & timestamp
         run: |
           set -euo pipefail
-          FILE_PREFIX="${PROJECT_NAME}-${RUN_ID}"
+          FILE_PREFIX="${PROJECT_NAME}-${TARGET_NAME}-${RUN_ID}"
           {
             echo "FILE_PREFIX=$FILE_PREFIX"
             echo "SBOM_FILE=${FILE_PREFIX}-sbom.json"
@@ -154,20 +190,20 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./samples/fastapi-demo
-          file: ./samples/fastapi-demo/Dockerfile
+          context: ${{ env.TARGET_CONTEXT }}
+          file: ${{ env.TARGET_DOCKERFILE }}
           push: true
-          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
       # Pull the exact tag back down so scanners and cosign work against the same bits we just published.
       - name: Pull image for local scan
-        run: docker pull "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+        run: docker pull "${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
 
       # Capture the immutable digest; every signing and upload step keys off this value.
       - name: Get image digest
         run: |
           set -euo pipefail
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" | awk -F'@' '{print $2}')
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${ACR_LOGIN_SERVER}/${TARGET_IMAGE_NAME}:${IMAGE_TAG}" | awk -F'@' '{print $2}')
           echo "IMAGE_DIGEST=$DIGEST" >> $GITHUB_ENV
 
       - name: Install Cosign
@@ -186,7 +222,7 @@ jobs:
       - name: Sign image (by digest, no tlog)
         run: |
           set -euo pipefail
-          REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          REF="${ACR_LOGIN_SERVER}/${TARGET_IMAGE_NAME}@${IMAGE_DIGEST}"
           cosign sign --key cosign.key --tlog-upload=false "$REF"
 
       - name: Verify image signature (by digest; ignore tlog)
@@ -195,7 +231,7 @@ jobs:
         # Keep the run going even if verification fails so we can optionally report the failure later.
         run: |
           set +e
-          REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          REF="${ACR_LOGIN_SERVER}/${TARGET_IMAGE_NAME}@${IMAGE_DIGEST}"
           cosign verify --key cosign.pub --insecure-ignore-tlog "$REF" >/tmp/cosign.verify 2>&1
           STATUS=$?
           set -e
@@ -211,7 +247,7 @@ jobs:
       - name: Generate SBOM (Syft via Anchore)
         uses: anchore/sbom-action@v0.20.1
         with:
-          image:        ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          image:        ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format:       cyclonedx-json
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
@@ -229,7 +265,7 @@ jobs:
         with:
           version: 'v0.66.0'
           scan-type: 'image'
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'json'
           output: trivy-report.json
           severity: ${{ steps.cfg.outputs.scan_levels }}
@@ -266,7 +302,7 @@ jobs:
         with:
           version: 'v0.66.0'
           scan-type: 'image'
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'sarif'
           output: trivy-results.sarif
           severity: ${{ steps.cfg.outputs.scan_levels }}
@@ -374,15 +410,9 @@ jobs:
 
       # ---------- Deploy to Azure Container Instances (CLI) ----------
       # Recreate the demo container so we can show the freshly scanned image running in ACI.
+      # TARGET_DEPLOY gates this entire block so scan-only targets skip infrastructure work.
       - name: Deploy to Azure Container Instance
-        env:
-          AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
-          AZURE_CONTAINER_NAME: ${{ env.AZURE_CONTAINER_NAME }}
-          ACR_LOGIN_SERVER:     ${{ env.ACR_LOGIN_SERVER }}
-          ACR_USERNAME:         ${{ env.ACR_USERNAME }}
-          ACR_PASSWORD:         ${{ env.ACR_PASSWORD }}
-          IMAGE_NAME:           ${{ env.IMAGE_NAME }}
-          IMAGE_TAG:            ${{ env.IMAGE_TAG }}
+        if: ${{ env.TARGET_DEPLOY == 'true' }}
         run: |
           set -euo pipefail
           if az container show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_CONTAINER_NAME" --only-show-errors --output none 2>/dev/null; then
@@ -395,7 +425,7 @@ jobs:
           az container create \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_CONTAINER_NAME" \
-            --image "$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG" \
+            --image "$ACR_LOGIN_SERVER/$TARGET_IMAGE_NAME:$IMAGE_TAG" \
             --registry-login-server "$ACR_LOGIN_SERVER" \
             --registry-username     "$ACR_USERNAME" \
             --registry-password     "$ACR_PASSWORD" \
@@ -409,7 +439,7 @@ jobs:
           test -s "${DEPLOY_SRC}"
 
       - name: Upload deploy endpoint artifact
-        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('aci-endpoint.txt') != '' }}
+        if: ${{ always() && env.TARGET_DEPLOY == 'true' && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('aci-endpoint.txt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
@@ -424,6 +454,13 @@ jobs:
         id: build_run_json
         run: |
           set -euo pipefail
+          if [ "${TARGET_DEPLOY}" = "true" ]; then
+            ACI_NAME_VALUE="${AZURE_CONTAINER_NAME}"
+            ACI_RG_VALUE="${AZURE_RESOURCE_GROUP}"
+          else
+            ACI_NAME_VALUE=""
+            ACI_RG_VALUE=""
+          fi
           SBOM_LINK="${SBOM_URL:-}"
           TRIVY_LINK="${TRIVY_URL:-}"
           jq -n \
@@ -437,7 +474,7 @@ jobs:
             --arg timestamp       "${RUN_TIMESTAMP}" \
             --arg actionsRunUrl   "${ACTIONS_RUN_URL}" \
             --arg acr             "${ACR_LOGIN_SERVER}" \
-            --arg imageName       "${IMAGE_NAME}" \
+            --arg imageName       "${TARGET_IMAGE_NAME}" \
             --arg imageTag        "${IMAGE_TAG}" \
             --arg imageDigest     "${IMAGE_DIGEST}" \
             --arg sbomFile        "${SBOM_FILE}" \
@@ -445,8 +482,9 @@ jobs:
             --arg sarifFile       "${SARIF_FILE}" \
             --arg sbomUrl         "${SBOM_LINK}" \
             --arg trivyUrl        "${TRIVY_LINK}" \
-            --arg aciName         "${AZURE_CONTAINER_NAME}" \
-            --arg aciRg           "${AZURE_RESOURCE_GROUP}" \
+            --arg imageRole       "${TARGET_NAME}" \
+            --arg aciName         "${ACI_NAME_VALUE}" \
+            --arg aciRg           "${ACI_RG_VALUE}" \
             --arg aciUrl          "${ACI_URL:-}" \
             --arg cosignStatus    "${COSIGN_VERIFY_STATUS:-unknown}" \
             --arg sevLevels       "${{ steps.cfg.outputs.scan_levels }}" \
@@ -473,6 +511,7 @@ jobs:
               commitSha: $sha,
               run: { id: $id, number: $runNumber, url: $actionsRunUrl },
               image: { registry: $acr, name: $imageName, tag: $imageTag, digest: $imageDigest },
+              imageRole: $imageRole,
               artifacts: {
                 azure: azure_links,
                 files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
