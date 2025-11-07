@@ -11,6 +11,7 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 service = AssistantService()
 logger = logging.getLogger(__name__)
 RUNTIME_ERROR_MESSAGE = "Assistant is temporarily unavailable. Please try again later."
+INVALID_REQUEST_MESSAGE = "Invalid request. Please check your inputs and try again."
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -19,9 +20,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         return service.generate(request)
     except ValueError as exc:
+        logger.info("Invalid assistant request: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail=INVALID_REQUEST_MESSAGE,
         ) from exc
     except RuntimeError as exc:
         logger.exception("Assistant runtime failure during chat request")
@@ -43,9 +45,10 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     try:
         generator = service.stream(request)
     except ValueError as exc:
+        logger.info("Invalid assistant streaming request: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail=INVALID_REQUEST_MESSAGE,
         ) from exc
     except RuntimeError as exc:
         logger.exception("Assistant runtime failure during streaming chat request")
