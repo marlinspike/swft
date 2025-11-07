@@ -7,15 +7,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pip if needed
-RUN python -m ensurepip --upgrade
+# Install pip/setuptools if needed
+RUN python -m ensurepip --upgrade && \
+    python -m pip install --upgrade pip "setuptools>=78.1.1"
 
 # Copy application source and dependency manifest in one layer
 COPY . .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose port 80
 EXPOSE 80
