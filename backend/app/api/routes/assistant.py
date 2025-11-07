@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
@@ -7,6 +9,8 @@ from ...assistant import AssistantService, AssistantConfig, ChatRequest, ChatRes
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 service = AssistantService()
+logger = logging.getLogger(__name__)
+RUNTIME_ERROR_MESSAGE = "Assistant is temporarily unavailable. Please try again later."
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -20,9 +24,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
             detail=str(exc),
         ) from exc
     except RuntimeError as exc:
+        logger.exception("Assistant runtime failure during chat request")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
+            detail=RUNTIME_ERROR_MESSAGE,
         ) from exc
 
 
@@ -43,8 +48,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             detail=str(exc),
         ) from exc
     except RuntimeError as exc:
+        logger.exception("Assistant runtime failure during streaming chat request")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
+            detail=RUNTIME_ERROR_MESSAGE,
         ) from exc
     return StreamingResponse(generator, media_type="application/x-ndjson")
