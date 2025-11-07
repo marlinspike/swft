@@ -391,21 +391,21 @@ jobs:
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('sbom.cyclonedx.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          name: sbom-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
           path: sbom.cyclonedx.json
 
       - name: Upload Trivy JSON artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('trivy-report.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          name: trivy-json-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
           path: trivy-report.json
 
       - name: Upload Trivy SARIF artifact
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('trivy-results.sarif') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-sarif-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          name: trivy-sarif-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
           path: trivy-results.sarif
 
       # ---------- Deploy to Azure Container Instances (CLI) ----------
@@ -442,7 +442,7 @@ jobs:
         if: ${{ always() && env.TARGET_DEPLOY == 'true' && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('aci-endpoint.txt') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          name: aci-deploy-info-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
           path: aci-endpoint.txt
 
       # ---------- Build RUN JSON AFTER Azure uploads & Deploy ----------
@@ -551,7 +551,7 @@ jobs:
         if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('run.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: swft-run-json-${{ env.PROJECT_NAME }}-${{ env.RUN_ID }}
+          name: swft-run-json-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
           path: run.json
 
       - name: Azure upload summary
