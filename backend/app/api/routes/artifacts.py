@@ -15,7 +15,7 @@ router = APIRouter(prefix="/projects/{project_id}/runs/{run_id}/artifacts", tags
 
 
 @router.get("/{artifact_type}", response_model=dict[str, Any])
-def fetch_artifact(project_id: str = Path(..., description="Project identifier"), run_id: str = Path(..., description="Run identifier"), artifact_type: str = Path(..., description="Artifact type (sbom|trivy|run)"), catalog: ArtifactCatalogService = Depends(get_catalog), user: UserContext = Depends(get_user)) -> dict[str, Any]:
+def fetch_artifact(project_id: str = Path(..., description="Project identifier"), run_id: str = Path(..., description="Run identifier"), artifact_type: str = Path(..., description="Artifact type (sbom|trivy|run|appdesign)"), catalog: ArtifactCatalogService = Depends(get_catalog), user: UserContext = Depends(get_user)) -> dict[str, Any]:
     """Return the raw JSON payload for a specific artifact if the user has access."""
     if user.allowed_projects and project_id not in user.allowed_projects:
         raise HTTPException(status_code=403, detail="Access to project denied.")
@@ -30,8 +30,12 @@ def fetch_artifact(project_id: str = Path(..., description="Project identifier")
     if not matches:
         raise HTTPException(status_code=404, detail=f"Artifact '{artifact_type}' not available for run '{run_id}'.")
     try:
+        descriptor = matches[0]
+        if artifact_type == "appdesign":
+            text = catalog.fetch_artifact_text(descriptor)
+            return {"content": text}
         # Reuse the catalog helper so caching and repository error handling stay consistent.
-        return catalog.fetch_artifact(matches[0])
+        return catalog.fetch_artifact(descriptor)
     except RepositoryError as exc:
         logger.exception("Failed to fetch artifact '%s' for project '%s' run '%s'", artifact_type, project_id, run_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

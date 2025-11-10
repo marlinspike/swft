@@ -284,6 +284,8 @@ export const AssistantPanel = ({
       selected_model: modelKey,
       history_depth: historyDepth,
       conversation_id: conversationId ?? undefined,
+      project_id: projectId,
+      run_id: runId,
     };
     const contextPayload = buildContextPayload();
     if (Object.keys(contextPayload).length > 0) {
