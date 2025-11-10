@@ -1,4 +1,4 @@
-export type ArtifactType = "sbom" | "trivy" | "run";
+export type ArtifactType = "sbom" | "trivy" | "run" | "appdesign";
 
 export interface ProjectSummary {
   project_id: string;
@@ -58,6 +58,8 @@ export interface AssistantRequest {
   history_depth: AssistantHistoryDepth;
   conversation_id?: string;
   context?: Record<string, string>;
+  project_id?: string;
+  run_id?: string;
 }
 
 export interface AssistantMetadata {

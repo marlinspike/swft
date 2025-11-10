@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Sequence
+import logging
 
 try:
     import orjson as _orjson
@@ -20,6 +21,7 @@ from .repository import BlobRecord, BlobRepository, AzureBlobRepository, LocalBl
 RUN_ARTIFACT_NAME = "run.json"
 SBOM_ARTIFACT_NAME = "sbom.json"
 TRIVY_ARTIFACT_NAME = "trivy.json"
+APPDESIGN_ARTIFACT_NAME = "appdesign.md"
 
 
 class ArtifactCatalogService:
@@ -36,12 +38,24 @@ class ArtifactCatalogService:
         self._cache[key] = value
         return value
 
+    def _list_container(self, container: str, *, required: bool) -> Sequence[BlobRecord]:
+        """List blobs from a container, optionally tolerating missing containers."""
+        if not container:
+            return []
+        try:
+            return list(self._repository.list_blobs(container))
+        except RepositoryError as exc:
+            if required:
+                raise
+            logger.debug("Optional container '%s' unavailable (%s); continuing without it.", container, exc)
+            return []
+
     def list_projects(self) -> Sequence[ProjectSummary]:
         """Return summaries of all projects discovered via run manifests."""
         key = "projects"
         def loader() -> Sequence[ProjectSummary]:
             groups: dict[str, list[datetime | None]] = defaultdict(list)
-            for record in self._repository.list_blobs(self._settings.storage.container_runs):
+            for record in self._list_container(self._settings.storage.container_runs, required=True):
                 project_id, _run_id, _artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                 if record.last_modified:
                     groups[project_id].append(record.last_modified)
@@ -67,13 +81,17 @@ class ArtifactCatalogService:
             runs: dict[str, RunSummary] = {}
             artifacts_by_run: dict[str, list[ArtifactDescriptor]] = defaultdict(list)
             # Sweep the run container first so we know which run IDs exist before looking for SBOM/Trivy extras.
-            for record in self._repository.list_blobs(self._settings.storage.container_runs):
+            for record in self._list_container(self._settings.storage.container_runs, required=True):
                 project, run_id, artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                 if project != project_id: continue
                 descriptor = ArtifactDescriptor(project_id=project, run_id=run_id, artifact_type="run", blob_name=record.name, container=self._settings.storage.container_runs, last_modified=record.last_modified, size_bytes=record.size)
                 artifacts_by_run[run_id].append(descriptor)
-            for container, artifact_type in ((self._settings.storage.container_sboms, "sbom"), (self._settings.storage.container_scans, "trivy")):
-                for record in self._repository.list_blobs(container):
+            for container, artifact_type in (
+                (self._settings.storage.container_sboms, "sbom"),
+                (self._settings.storage.container_scans, "trivy"),
+                (self._settings.storage.container_appdesign, "appdesign"),
+            ):
+                for record in self._list_container(container, required=False):
                     project, run_id, artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                     if project != project_id: continue
                     descriptor = ArtifactDescriptor(project_id=project, run_id=run_id, artifact_type=artifact_type, blob_name=record.name, container=container, last_modified=record.last_modified, size_bytes=record.size)
@@ -152,15 +170,26 @@ class ArtifactCatalogService:
             (self._settings.storage.container_runs, "run"),
             (self._settings.storage.container_sboms, "sbom"),
             (self._settings.storage.container_scans, "trivy"),
+            (self._settings.storage.container_appdesign, "appdesign"),
         ):
+            required = artifact_type == "run"
             # Containers are flat, so we filter by project/run prefix to avoid loading unrelated blobs.
-            for record in self._repository.list_blobs(container):
+            for record in self._list_container(container, required=required):
                 project, record_run_id, _artifact = parse_blob_key(record.name, self._settings.storage.delimiter)
                 if project == project_id and record_run_id == run_id:
                     descriptors.append(ArtifactDescriptor(project_id=project_id, run_id=run_id, artifact_type=artifact_type, blob_name=record.name, container=container, last_modified=record.last_modified, size_bytes=record.size))
         if not descriptors:
             raise NotFoundError(f"No artifacts found for project '{project_id}' run '{run_id}'.")
         return descriptors
+
+    def fetch_artifact_text(self, descriptor: ArtifactDescriptor) -> str:
+        """Return the raw text content of an artifact."""
+        try:
+            return self._repository.download_text(descriptor.container, descriptor.blob_name)
+        except RepositoryError:
+            raise
+        except Exception as exc:
+            raise RepositoryError(f"Failed to download '{descriptor.blob_name}'.") from exc
 
     def _load_run_metadata(self, project_id: str, run_id: str) -> dict[str, object]:
         """Read the canonical run.json metadata file for the run."""
@@ -177,6 +206,27 @@ class ArtifactCatalogService:
             return self._load_run_metadata(project_id, run_id)
         except (NotFoundError, RepositoryError):
             return {}
+
+    def load_app_design(self, project_id: str, run_id: str) -> str | None:
+        """Return the per-run app-design.md contents if available."""
+        container = self._settings.storage.container_appdesign
+        if not container:
+            return None
+
+        key = f"appdesign:{project_id}:{run_id}"
+
+        def loader() -> str | None:
+            metadata = self._safe_load_run(project_id, run_id)
+            file_name = _nested_str(metadata, ["artifacts", "files", "appDesign"])
+            if not file_name:
+                file_name = build_blob_name(project_id, run_id, APPDESIGN_ARTIFACT_NAME, self._settings.storage.delimiter)
+            try:
+                return self._repository.download_text(container, file_name)
+            except RepositoryError:
+                return None
+
+        result = self._cache_get(key, loader)
+        return result if isinstance(result, str) else None
 
 
 def create_catalog(settings: AppSettings) -> ArtifactCatalogService:
@@ -246,3 +296,4 @@ def _count_by_type(descriptors: Sequence[ArtifactDescriptor]) -> dict[str, int]:
     for descriptor in descriptors:
         counts[descriptor.artifact_type] += 1
     return dict(counts)
+logger = logging.getLogger(__name__)

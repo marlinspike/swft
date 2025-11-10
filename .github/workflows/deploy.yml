@@ -33,9 +33,9 @@ on:
         type: string
         default: "scan=HIGH,CRITICAL;ignore_unfixed=true;fail=CRITICAL"
       storage_containers:
-        description: "sboms,scans,runs"
+        description: "sboms,scans,runs,appdesign"
         type: string
-        default: "sboms,scans,runs"
+        default: "sboms,scans,runs,appdesign"
       fail_on_trivy:
         description: "Fail the workflow if FAIL set has findings (manual runs only)"
         type: boolean
@@ -79,6 +79,7 @@ env:
   SARIF_SRC:    trivy-results.sarif
   DEPLOY_SRC:   aci-endpoint.txt
   RUNJSON_SRC:  run.json
+  APPDESIGN_SRC: app-design.md
 
 jobs:
   # End-to-end pipeline: build the container, scan/sign it, ship artifacts, and redeploy the demo.
@@ -137,6 +138,7 @@ jobs:
             echo "SARIF_FILE=${FILE_PREFIX}-trivy.sarif"
             echo "DEPLOY_FILE=${FILE_PREFIX}-deploy.txt"
             echo "RUN_JSON_FILE=${FILE_PREFIX}-run.json"
+            echo "APPDESIGN_FILE=${FILE_PREFIX}-appdesign.md"
             echo "ACTIONS_RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
             echo "RUN_TIMESTAMP=$(date -u +%FT%TZ)"
           } >> $GITHUB_ENV
@@ -159,10 +161,11 @@ jobs:
           # ---- Containers
           CS="${{ github.event_name == 'workflow_dispatch' && inputs.storage_containers || '' }}"
           [ -z "$CS" ] && CS="sboms,scans,runs"
-          IFS=',' read -r CN_SBOM CN_SCAN CN_RUNS <<< "$CS"
+          IFS=',' read -r CN_SBOM CN_SCAN CN_RUNS CN_APPDESIGN <<< "$CS"
           echo "cn_sbom=${CN_SBOM:-sboms}" >> $GITHUB_OUTPUT
           echo "cn_scan=${CN_SCAN:-scans}" >> $GITHUB_OUTPUT
           echo "cn_runs=${CN_RUNS:-runs}"  >> $GITHUB_OUTPUT
+          echo "cn_appdesign=${CN_APPDESIGN:-appdesign}" >> $GITHUB_OUTPUT
 
           # ---- Effective switches (works for push AND manual)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -364,6 +367,7 @@ jobs:
             az storage container create --name "${{ steps.cfg.outputs.cn_sbom }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
             az storage container create --name "${{ steps.cfg.outputs.cn_scan }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
             az storage container create --name "${{ steps.cfg.outputs.cn_runs }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
+            az storage container create --name "${{ steps.cfg.outputs.cn_appdesign }}" --account-name "${AZURE_STORAGE_ACCOUNT}" --auth-mode login >/dev/null
 
       # Copy the SBOM to a run-scoped filename and push it into the chosen container.
       - name: Upload SBOM to Azure Storage (flat name)
@@ -389,6 +393,22 @@ jobs:
             TRIVY_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_scan }}" --name "${TRIVY_FILE}" -o tsv)
             echo "TRIVY_URL=$TRIVY_URL" >> $GITHUB_ENV
 
+      - name: Upload app-design.md to Azure Storage (flat name)
+        if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            if [ ! -f "${APPDESIGN_SRC}" ]; then
+              echo "app-design.md missing in repository; skipping upload."
+              exit 0
+            fi
+            cp -f "${APPDESIGN_SRC}" "${APPDESIGN_FILE}"
+            az storage blob upload --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_appdesign }}" --file "${APPDESIGN_FILE}" --name "${APPDESIGN_FILE}" --overwrite true --auth-mode login
+            APPDESIGN_URL=$(az storage blob url --account-name "${AZURE_STORAGE_ACCOUNT}" --container-name "${{ steps.cfg.outputs.cn_appdesign }}" --name "${APPDESIGN_FILE}" -o tsv)
+            echo "APPDESIGN_URL=$APPDESIGN_URL" >> $GITHUB_ENV
+            echo "APPDESIGN_PRESENT=true" >> $GITHUB_ENV
+
       # ---------- Upload each artifact as a single file ----------
       # Always stash a copy in GitHub Artifacts so we have an easy download, even if Azure is disabled.
       - name: Upload SBOM artifact
@@ -411,6 +431,13 @@ jobs:
         with:
           name: trivy-sarif-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
           path: trivy-results.sarif
+
+      - name: Upload app-design artifact
+        if: ${{ always() && steps.cfg.outputs.upload_artifacts == 'true' && hashFiles('app-design.md') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appdesign-${{ env.PROJECT_NAME }}-${{ env.TARGET_NAME }}-${{ env.RUN_ID }}-attempt${{ github.run_attempt }}
+          path: ${{ env.APPDESIGN_SRC }}
 
       # ---------- Deploy to Azure Container Instances (CLI) ----------
       # Recreate the demo container so we can show the freshly scanned image running in ACI.
@@ -486,6 +513,8 @@ jobs:
             --arg sarifFile       "${SARIF_FILE}" \
             --arg sbomUrl         "${SBOM_LINK}" \
             --arg trivyUrl        "${TRIVY_LINK}" \
+            --arg appDesignFile   "${APPDESIGN_FILE:-}" \
+            --arg appDesignUrl    "${APPDESIGN_URL:-}" \
             --arg imageRole       "${TARGET_NAME}" \
             --arg aciName         "${ACI_NAME_VALUE}" \
             --arg aciRg           "${ACI_RG_VALUE}" \
@@ -500,10 +529,18 @@ jobs:
             --argjson failFindings  ${TRIVY_FINDINGS_FAILSET:-0} \
             '
             def azure_links:
-              if (($sbomUrl|length) > 0 or ($trivyUrl|length) > 0)
-              then { sbom: $sbomUrl, trivy: $trivyUrl }
-              else null
-              end;
+              [
+                { key: "sbom", value: $sbomUrl },
+                { key: "trivy", value: $trivyUrl },
+                { key: "appDesign", value: $appDesignUrl }
+              ]
+              | reduce .[] as $item ({};
+                  if ($item.value | length) > 0
+                  then . + { ($item.key): $item.value }
+                  else .
+                  end
+                )
+              | (if (keys | length) > 0 then . else null end);
 
             {
               id: $id,
@@ -518,7 +555,12 @@ jobs:
               imageRole: $imageRole,
               artifacts: {
                 azure: azure_links,
-                files: { sbom: $sbomFile, trivy: $trivyFile, sarif: $sarifFile }
+                files: {
+                  sbom: $sbomFile,
+                  trivy: $trivyFile,
+                  sarif: $sarifFile,
+                  appDesign: (if ($appDesignUrl | length) > 0 then $appDesignFile else null end)
+                }
               },
               assessment: {
                 cosign: { verifyStatus: $cosignStatus },
@@ -561,10 +603,11 @@ jobs:
       - name: Azure upload summary
         if: ${{ steps.cfg.outputs.upload_to_azure == 'true' }}
         run: |
-          {
-            echo "### Azure uploads"
-            echo ""
-            echo "- SBOM:  ${SBOM_URL:-'(n/a)'}"
-            echo "- Trivy: ${TRIVY_URL:-'(n/a)'}"
-            echo "- Run JSON: ${RUN_JSON_URL:-'(n/a)'}"
-          } >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### Azure uploads"
+              echo ""
+              echo "- SBOM:  ${SBOM_URL:-'(n/a)'}"
+              echo "- Trivy: ${TRIVY_URL:-'(n/a)'}"
+              echo "- App design: ${APPDESIGN_URL:-'(n/a)'}"
+              echo "- Run JSON: ${RUN_JSON_URL:-'(n/a)'}"
+            } >> "$GITHUB_STEP_SUMMARY"

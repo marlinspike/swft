@@ -13,6 +13,7 @@ def _settings(tmp_path: Path) -> AppSettings:
         container_sboms="sboms",
         container_scans="scans",
         container_runs="runs",
+        container_appdesign="appdesign",
         delimiter="-",
         local_blob_root=str(tmp_path)
     )
@@ -22,10 +23,10 @@ def _settings(tmp_path: Path) -> AppSettings:
 
 def test_catalog_lists_projects(tmp_path: Path) -> None:
     data_dir = Path(__file__).parent / "data"
-    for container in ("runs", "sboms", "scans"):
+    for container in ("runs", "sboms", "scans", "appdesign"):
         dest = tmp_path / container
         dest.mkdir(parents=True, exist_ok=True)
-        for file in (data_dir / container).glob("*.json"):
+        for file in (data_dir / container).glob("*"):
             dest_file = dest / file.name
             dest_file.write_text(file.read_text(), encoding="utf-8")
     repository = LocalBlobRepository(str(tmp_path))
@@ -38,10 +39,10 @@ def test_catalog_lists_projects(tmp_path: Path) -> None:
 
 def test_catalog_returns_run_detail(tmp_path: Path) -> None:
     data_dir = Path(__file__).parent / "data"
-    for container in ("runs", "sboms", "scans"):
+    for container in ("runs", "sboms", "scans", "appdesign"):
         dest = tmp_path / container
         dest.mkdir(parents=True, exist_ok=True)
-        for file in (data_dir / container).glob("*.json"):
+        for file in (data_dir / container).glob("*"):
             dest_file = dest / file.name
             dest_file.write_text(file.read_text(), encoding="utf-8")
     repository = LocalBlobRepository(str(tmp_path))
@@ -56,10 +57,10 @@ def test_catalog_returns_run_detail(tmp_path: Path) -> None:
 
 def test_catalog_list_runs_limit(tmp_path: Path) -> None:
     data_dir = Path(__file__).parent / "data"
-    for container in ("runs", "sboms", "scans"):
+    for container in ("runs", "sboms", "scans", "appdesign"):
         dest = tmp_path / container
         dest.mkdir(parents=True, exist_ok=True)
-        for file in (data_dir / container).glob("*.json"):
+        for file in (data_dir / container).glob("*"):
             dest_file = dest / file.name
             dest_file.write_text(file.read_text(), encoding="utf-8")
     # add a newer run with distinct metrics
@@ -83,6 +84,10 @@ def test_catalog_list_runs_limit(tmp_path: Path) -> None:
         """{ "results": [] }""",
         encoding="utf-8"
     )
+    (tmp_path / "appdesign" / "demo-101-appdesign.md").write_text(
+        "# Demo design for run 101\n\nUpdated doc.",
+        encoding="utf-8"
+    )
 
     repository = LocalBlobRepository(str(tmp_path))
     service = ArtifactCatalogService(repository, _settings(tmp_path))
@@ -92,3 +97,20 @@ def test_catalog_list_runs_limit(tmp_path: Path) -> None:
     assert limited[0].run_id == "101"
     assert limited[0].sbom_component_total == 2
     assert limited[1].run_id == "100"
+
+
+def test_catalog_loads_app_design(tmp_path: Path) -> None:
+    data_dir = Path(__file__).parent / "data"
+    for container in ("runs", "sboms", "scans", "appdesign"):
+        dest = tmp_path / container
+        dest.mkdir(parents=True, exist_ok=True)
+        for file in (data_dir / container).glob("*"):
+            dest_file = dest / file.name
+            dest_file.write_text(file.read_text(), encoding="utf-8")
+
+    repository = LocalBlobRepository(str(tmp_path))
+    service = ArtifactCatalogService(repository, _settings(tmp_path))
+
+    design = service.load_app_design("demo", "100")
+    assert design is not None
+    assert "architecture" in design.lower()
