@@ -2,7 +2,7 @@ name: SWFT Container CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, spike-appdesign ]
     paths:
       - 'samples/fastapi-demo/**'
       - 'backend/**'
