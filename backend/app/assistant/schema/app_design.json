@@ -1,0 +1,66 @@
+{
+  "title": "Architecture Context Schema",
+  "description": "Structure of the app-design.md document supplied with each workflow run.",
+  "type": "object",
+  "properties": {
+    "missionObjectives": {
+      "type": "array",
+      "description": "Top-level mission goals and success metrics documented by the team.",
+      "items": { "type": "string" }
+    },
+    "systemOverview": {
+      "type": "object",
+      "description": "High-level architecture description including trust boundaries and data flows.",
+      "properties": {
+        "description": { "type": "string" },
+        "diagrams": {
+          "type": "array",
+          "items": { "type": "string", "description": "Links or references to diagrams." }
+        }
+      }
+    },
+    "componentGlossary": {
+      "type": "array",
+      "description": "Table entries mapping components to owners and dependencies.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "type": "string" },
+          "owner": { "type": "string" },
+          "dependencies": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "evidenceCatalogue": {
+      "type": "string",
+      "description": "Narrative describing how SBOM, scan, and run metadata are generated and retained."
+    },
+    "controlMapping": {
+      "type": "array",
+      "description": "List of controls mapped to pipeline stages.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "control": { "type": "string" },
+          "stage": { "type": "string" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "operationalPlaybooks": {
+      "type": "string",
+      "description": "Summary of responder procedures for failures or policy drift."
+    },
+    "environmentMatrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "environment": { "type": "string" },
+          "hosting": { "type": "string" },
+          "classification": { "type": "string" }
+        }
+      }
+    }
+  }
+}

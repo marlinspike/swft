@@ -18,6 +18,7 @@ class Facet(str, Enum):
     sbom = "sbom"
     trivy = "trivy"
     general = "general"
+    architecture = "architecture"
 
 
 HistoryDepth = Literal[0, 2, 5, 7, 10, 15, "all"]

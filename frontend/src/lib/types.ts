@@ -41,7 +41,7 @@ export interface ApiState<T> {
 }
 
 export type AssistantPersona = "security_assessor" | "compliance_officer" | "devops_engineer" | "software_developer";
-export type AssistantFacet = "run_manifest" | "sbom" | "trivy" | "general";
+export type AssistantFacet = "run_manifest" | "sbom" | "trivy" | "general" | "architecture";
 export type AssistantHistoryDepth = 0 | 2 | 5 | 7 | 10 | 15 | "all";
 
 export interface AssistantMessage {
