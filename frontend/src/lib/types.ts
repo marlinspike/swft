@@ -1,4 +1,4 @@
-export type ArtifactType = "sbom" | "trivy" | "run";
+export type ArtifactType = "sbom" | "trivy" | "run" | "appdesign";
 
 export interface ProjectSummary {
   project_id: string;
@@ -41,7 +41,7 @@ export interface ApiState<T> {
 }
 
 export type AssistantPersona = "security_assessor" | "compliance_officer" | "devops_engineer" | "software_developer";
-export type AssistantFacet = "run_manifest" | "sbom" | "trivy" | "general";
+export type AssistantFacet = "run_manifest" | "sbom" | "trivy" | "general" | "architecture";
 export type AssistantHistoryDepth = 0 | 2 | 5 | 7 | 10 | 15 | "all";
 
 export interface AssistantMessage {
@@ -58,6 +58,8 @@ export interface AssistantRequest {
   history_depth: AssistantHistoryDepth;
   conversation_id?: string;
   context?: Record<string, string>;
+  project_id?: string;
+  run_id?: string;
 }
 
 export interface AssistantMetadata {

@@ -18,6 +18,7 @@ class Facet(str, Enum):
     sbom = "sbom"
     trivy = "trivy"
     general = "general"
+    architecture = "architecture"
 
 
 HistoryDepth = Literal[0, 2, 5, 7, 10, 15, "all"]
@@ -41,6 +42,8 @@ class ChatRequest(BaseModel):
     history_depth: HistoryDepth = Field(default=5)
     conversation_id: str | None = Field(default=None, description="Client-provided conversation identifier.")
     context: dict[str, str] = Field(default_factory=dict, description="Optional map of context label to raw content.")
+    project_id: str | None = Field(default=None, description="Project identifier whose artifacts should be referenced.")
+    run_id: str | None = Field(default=None, description="Run identifier tied to the provided evidence.")
 
     @model_validator(mode="after")
     def validate_history_depth(self) -> "ChatRequest":
@@ -48,6 +51,8 @@ class ChatRequest(BaseModel):
         for entry in self.history:
             if entry.role == "system":
                 raise ValueError("Conversation history may not contain system messages.")
+        if (self.project_id and not self.run_id) or (self.run_id and not self.project_id):
+            raise ValueError("project_id and run_id must be provided together.")
         return self
 
 

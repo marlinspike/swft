@@ -11,6 +11,7 @@ load_dotenv()
 DEFAULT_SBOM_CONTAINER: Final[str] = "sboms"
 DEFAULT_SCAN_CONTAINER: Final[str] = "scans"
 DEFAULT_RUN_CONTAINER: Final[str] = "runs"
+DEFAULT_APPDESIGN_CONTAINER: Final[str] = "appdesign"
 DEFAULT_DELIMITER: Final[str] = "-"
 
 
@@ -21,6 +22,7 @@ class StorageSettings:
     container_sboms: str
     container_scans: str
     container_runs: str
+    container_appdesign: str
     delimiter: str
     local_blob_root: str | None
 
@@ -54,6 +56,7 @@ def get_settings() -> AppSettings:
         container_sboms=_env("AZURE_STORAGE_CONTAINER_SBOMS", DEFAULT_SBOM_CONTAINER),
         container_scans=_env("AZURE_STORAGE_CONTAINER_SCANS", DEFAULT_SCAN_CONTAINER),
         container_runs=_env("AZURE_STORAGE_CONTAINER_RUNS", DEFAULT_RUN_CONTAINER),
+        container_appdesign=_env("AZURE_STORAGE_CONTAINER_APPDESIGN", DEFAULT_APPDESIGN_CONTAINER),
         delimiter=_env("AZURE_STORAGE_BLOB_PREFIX_DELIMITER", DEFAULT_DELIMITER) or DEFAULT_DELIMITER,
         local_blob_root=_env("LOCAL_BLOB_ROOT")
     )

@@ -5,9 +5,11 @@ type JsonModalProps = {
   content: string;
   fileName?: string;
   onClose: () => void;
+  mimeType?: string;
+  downloadExtension?: string;
 };
 
-export const JsonModal = ({ title, content, fileName, onClose }: JsonModalProps) => {
+export const JsonModal = ({ title, content, fileName, onClose, mimeType = "application/json", downloadExtension = "json" }: JsonModalProps) => {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -16,15 +18,20 @@ export const JsonModal = ({ title, content, fileName, onClose }: JsonModalProps)
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  const normalizedExtension = downloadExtension.replace(/^\./, "") || "txt";
+
   const handleDownload = () => {
-    const normalized = (fileName ?? title)
+    const targetName = (fileName ?? "").trim();
+    const sanitizedTitle = title
       .toLowerCase()
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-_.]/g, "")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "");
-    const downloadName = normalized.length > 0 ? (normalized.endsWith(".json") ? normalized : `${normalized}.json`) : "data.json";
-    const blob = new Blob([content], { type: "application/json" });
+    const extension = normalizedExtension;
+    const fallbackName = sanitizedTitle.length > 0 ? `${sanitizedTitle}.${extension}` : `document.${extension}`;
+    const downloadName = targetName.length > 0 ? targetName : fallbackName;
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -34,6 +41,7 @@ export const JsonModal = ({ title, content, fileName, onClose }: JsonModalProps)
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+  const downloadLabel = normalizedExtension === "json" ? "Download JSON" : "Download file";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur dark:bg-slate-950/80">
@@ -46,7 +54,7 @@ export const JsonModal = ({ title, content, fileName, onClose }: JsonModalProps)
               onClick={handleDownload}
               className="rounded-md border border-slate-300 px-3 py-1 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-700 dark:border-slate-600 dark:text-blue-200 dark:hover:border-blue-400 dark:hover:text-blue-100"
             >
-              Download JSON
+              {downloadLabel}
             </button>
             <button
               type="button"

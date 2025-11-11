@@ -18,6 +18,8 @@ from openai import (
 )
 
 from ..core.cache import SimpleTTLCache, create_cache
+from ..core.config import get_settings
+from ..services.catalog import ArtifactCatalogService, create_catalog
 from .config import AssistantSettings, ModelDescriptor, Provider, get_assistant_settings
 from .models import (
     AssistantConfig,
@@ -38,8 +40,8 @@ APP_DESIGN_PATH = Path("app-design.md")
 _app_design_cache: SimpleTTLCache = create_cache(max_items=1, ttl_seconds=120)
 
 
-def _load_app_design() -> str:
-    """Read app-design.md and cache the contents for short intervals."""
+def _load_repo_app_design() -> str:
+    """Read app-design.md from the local workspace with a short-lived cache."""
     key = "app_design"
     if key in _app_design_cache:
         return _app_design_cache[key]
@@ -78,7 +80,7 @@ def _message_payload(role: str, content: str) -> dict[str, object]:
 class AssistantService:
     """High-level façade orchestrating prompt assembly and model calls."""
 
-    def __init__(self, settings: AssistantSettings | None = None):
+    def __init__(self, settings: AssistantSettings | None = None, catalog: ArtifactCatalogService | None = None):
         self._settings = settings or get_assistant_settings()
         self._provider_cfg = self._settings.provider_config()
         self._client: OpenAI | AzureOpenAI | None = None
@@ -86,6 +88,13 @@ class AssistantService:
             ttl_seconds=self._settings.history_ttl_seconds,
             max_items=self._settings.history_max_items,
         )
+        if catalog is None:
+            try:
+                catalog = create_catalog(get_settings())
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                logger.warning("Unable to initialise artifact catalog for assistant: %s", exc)
+                catalog = None
+        self._catalog: ArtifactCatalogService | None = catalog
 
     def _build_client(self, provider: Provider) -> OpenAI | AzureOpenAI:
         if provider == "azure":
@@ -132,10 +141,11 @@ class AssistantService:
 
     def _build_messages(self, request: ChatRequest, conversation_id: str) -> tuple[list[dict[str, object]], list[ChatMessage]]:
         schema_bundle = get_schema_bundle(request.facet)
+        app_design = self._resolve_app_design(request)
         system_prompt = build_system_prompt(
             persona=request.persona,
             facet=request.facet,
-            app_design=_load_app_design(),
+            app_design=app_design,
             schemas=schema_bundle,
             context=request.context or None,
         )
@@ -188,6 +198,18 @@ class AssistantService:
             # Fallback to raw serialization.
             text = str(response)
         return text
+
+    def _resolve_app_design(self, request: ChatRequest) -> str:
+        """Load the best available app-design.md context for this request."""
+        if request.project_id and request.run_id and self._catalog:
+            try:
+                design = self._catalog.load_app_design(request.project_id, request.run_id)
+                if design:
+                    return design
+            except Exception:
+                logger.exception("Failed to load app-design.md for %s/%s", request.project_id, request.run_id)
+        # Disable repo fallback so missing Azure blobs are obvious during testing.
+        return "app-design.md not found in Azure Storage for this run. Confirm the workflow upload succeeded."
 
     def generate(self, request: ChatRequest) -> ChatResponse:
         provider = self._settings.provider
