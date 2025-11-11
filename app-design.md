@@ -98,10 +98,54 @@ Inherited controls include GitHub Enterprise SaaS baselines, Azure platform encr
 - **Open risk** – AI assistant payloads can exceed model context when SBOMs are massive; mitigated by client-side minification and facet-specific limits, but teams should consider summarising SBOMs server-side for very large images.
 - **Backlog** – Add automated drift detection across runs (component deltas, cosign failures) and support for additional artefacts (CodeQL SARIF ingestion).
 
-## 10. Change Log
+## 10. CVEs Fixed
+| CVE              | Component (Package) | Installed Version           | Fixed Version            |
+|------------------|---------------------|-----------------------------|---------------------------|
+| CVE-2025-4802    | libc-bin            | 2.36-9+deb12u10             | 2.36-9+deb12u11          |
+| CVE-2025-4802    | libc6               | 2.36-9+deb12u10             | 2.36-9+deb12u11          |
+| CVE-2023-52425   | libexpat1           | 2.5.0-1+deb12u1             | 2.5.0-1+deb12u2          |
+| CVE-2024-8176    | libexpat1           | 2.5.0-1+deb12u1             | 2.5.0-1+deb12u2          |
+| CVE-2025-32988   | libgnutls30         | 3.7.9-2+deb12u4             | 3.7.9-2+deb12u5          |
+| CVE-2025-32990   | libgnutls30         | 3.7.9-2+deb12u4             | 3.7.9-2+deb12u5          |
+| CVE-2025-5222    | libicu72            | 72.1-3                      | 72.1-3+deb12u1           |
+| CVE-2025-9900    | libtiff6            | 4.5.0-6+deb12u2             | 4.5.0-6+deb12u3          |
+| CVE-2024-56171   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2025-49794   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u3  |
+| CVE-2025-49796   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u3  |
+| CVE-2022-49043   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2024-25062   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2025-24928   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2025-27113   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2025-32414   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2025-32415   | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u2  |
+| CVE-2025-6021    | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u3  |
+| CVE-2025-7424    | libxslt1.1          | 1.1.35-1+deb12u1            | 1.1.35-1+deb12u2         |
+| CVE-2023-31484   | perl-base           | 5.36.0-7+deb12u2            | 5.36.0-7+deb12u3         |
+
+### Method
+Modifed Dockerfile to pull latest security patches:
+
+  - libxml2 
+  - libexpat1 
+  - libgnutls30 
+  - libc-bin 
+  - libc6 
+  - libicu72 
+  - libxslt1.1 
+  - libtiff6 
+  - libkrb5-3 
+  - libkrb5support0 
+  - libgssapi-krb5-2 
+  - openssl 
+  - libssl3 
+  - perl-base 
+
+
+## 11. Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2025-11-11 | Updated CVEs Fixed | Dev Team |
 | 2025-11-11 | Replaced template with SWFT-specific architecture, controls, and assistant guidance. | Platform Team |
-| 2025-11-06 | Initial outline committed to support AO assistant conversations. | Platform Team |
+| 2025-11-01 | Initial outline committed to support AO assistant conversations. | Platform Team |
 
