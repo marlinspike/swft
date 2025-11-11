@@ -84,6 +84,9 @@ export interface AssistantModelOption {
   key: string;
   label: string;
   response_format?: string | null;
+  total_context_window?: number | null;
+  max_input_tokens?: number | null;
+  max_output_tokens?: number | null;
 }
 
 export interface AssistantConfig {
