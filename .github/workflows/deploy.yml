@@ -178,6 +178,19 @@ jobs:
           echo "upload_to_azure=$AZ"  >> $GITHUB_OUTPUT
           echo "upload_artifacts=$AR" >> $GITHUB_OUTPUT
 
+      - name: Debug upload targets
+        run: |
+          set -euo pipefail
+          echo "=== Upload debug information ==="
+          echo "Account: ${AZURE_STORAGE_ACCOUNT}"
+          echo "Matrix target: ${TARGET_NAME}"
+          echo "Containers:"
+          echo "  SBOM:      ${{ steps.cfg.outputs.cn_sbom }}"
+          echo "  Trivy:     ${{ steps.cfg.outputs.cn_scan }}"
+          echo "  Runs:      ${{ steps.cfg.outputs.cn_runs }}"
+          echo "  AppDesign: ${{ steps.cfg.outputs.cn_appdesign }}"
+          echo "================================="
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
