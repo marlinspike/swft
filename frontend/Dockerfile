@@ -7,7 +7,8 @@
 #   docker build -t swft-frontend --build-arg VITE_API_BASE_URL=https://api.example.com -f frontend/Dockerfile frontend
 ##
 
-FROM node:20-alpine AS deps
+# Vite 7+ consumes package-level imports that only resolve cleanly on Node 24+.
+FROM node:24-alpine AS deps
 WORKDIR /app
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=0
