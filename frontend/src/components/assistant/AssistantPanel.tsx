@@ -38,6 +38,7 @@ type AssistantPanelProps = {
     run?: string | null;
     sbom?: string | null;
     trivy?: string | null;
+    appDesign?: string | null;
   };
 };
 
@@ -113,6 +114,16 @@ const facetDefinitions: Record<
       "Explain how this system satisfies IL4/IL5 controls.",
       "What evidence should the AO review before signing off?",
       "How does this pipeline support code-to-production traceability?",
+    ],
+  },
+  architecture: {
+    label: "Architecture",
+    description: "Deep dive into app-design.md design intent and controls",
+    icon: <FaceSmileIcon className="h-5 w-5" />,
+    prompts: [
+      "Explain the architecture risks called out in app-design.md.",
+      "Which controls or dependencies are critical in this design?",
+      "Summarize the mission objectives captured in app-design.md.",
     ],
   },
 };
@@ -199,20 +210,25 @@ export const AssistantPanel = ({
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const buildContextPayload = useCallback((): Record<string, string> => {
-    const payload: Record<string, string> = {};
-    const runValue = truncateContext("Run Manifest", contextArtifacts.run);
-    if (runValue) payload["Run Manifest"] = runValue;
-    const sbomValue = truncateContext("SBOM Artifact", contextArtifacts.sbom);
-    const trivyValue = truncateContext("Trivy Report", contextArtifacts.trivy);
-    if (facet === "sbom" && sbomValue) payload["SBOM Artifact"] = sbomValue;
-    if (facet === "trivy" && trivyValue) payload["Trivy Report"] = trivyValue;
-    if (facet === "general") {
-      if (sbomValue) payload["SBOM Artifact"] = sbomValue;
-      if (trivyValue) payload["Trivy Report"] = trivyValue;
-    }
-    return payload;
-  }, [contextArtifacts.run, contextArtifacts.sbom, contextArtifacts.trivy, facet]);
+const buildContextPayload = useCallback((): Record<string, string> => {
+  const payload: Record<string, string> = {};
+  const runValue = truncateContext("Run Manifest", contextArtifacts.run);
+  if (runValue) payload["Run Manifest"] = runValue;
+  const sbomValue = truncateContext("SBOM Artifact", contextArtifacts.sbom);
+  const trivyValue = truncateContext("Trivy Report", contextArtifacts.trivy);
+  const appDesignValue = truncateContext("Architecture Context", contextArtifacts.appDesign);
+  if (facet === "sbom" && sbomValue) payload["SBOM Artifact"] = sbomValue;
+  if (facet === "trivy" && trivyValue) payload["Trivy Report"] = trivyValue;
+  if (facet === "general") {
+    if (sbomValue) payload["SBOM Artifact"] = sbomValue;
+    if (trivyValue) payload["Trivy Report"] = trivyValue;
+    if (appDesignValue) payload["Architecture Context"] = appDesignValue;
+  }
+  if (facet === "architecture" && appDesignValue) {
+    payload["Architecture Context"] = appDesignValue;
+  }
+  return payload;
+}, [contextArtifacts.run, contextArtifacts.sbom, contextArtifacts.trivy, contextArtifacts.appDesign, facet]);
   useEffect(() => {
     if (!open || config) return;
     setLoadingConfig(true);

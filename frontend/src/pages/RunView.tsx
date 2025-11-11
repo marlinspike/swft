@@ -789,19 +789,6 @@ export const RunPage = () => {
     </button>
   );
 
-  const handleDownloadAppDesign = () => {
-    if (!appDesignContent) return;
-    const blob = new Blob([appDesignContent], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = appDesignFileName || "app-design.md";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -922,13 +909,6 @@ export const RunPage = () => {
                 >
                   View full document
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadAppDesign}
-                  className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-white"
-                >
-                  Download .md
-                </button>
               </div>
             )
             : null
@@ -969,6 +949,7 @@ export const RunPage = () => {
           run: runRaw,
           sbom: sbomRaw,
           trivy: trivyRaw,
+          appDesign: appDesignContent,
         }}
       />
       {rawModal && (

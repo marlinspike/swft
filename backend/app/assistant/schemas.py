@@ -13,6 +13,7 @@ SCHEMA_FILE_MAP: Final[dict[str, Path]] = {
     "SBOM Schema": SCHEMA_DIRECTORY / "sbom.json",
     "Trivy Scan Schema": SCHEMA_DIRECTORY / "trivy_scan.json",
     "General Context Schema": SCHEMA_DIRECTORY / "general.json",
+    "Architecture Context Schema": SCHEMA_DIRECTORY / "app_design.json",
 }
 
 FACET_SCHEMA_ORDER: Final[dict[Facet, list[str]]] = {
@@ -20,6 +21,7 @@ FACET_SCHEMA_ORDER: Final[dict[Facet, list[str]]] = {
     Facet.sbom: ["Run Manifest Schema", "SBOM Schema"],
     Facet.trivy: ["Run Manifest Schema", "Trivy Scan Schema"],
     Facet.general: ["Run Manifest Schema", "General Context Schema"],
+    Facet.architecture: ["Architecture Context Schema"],
 }
 
 _schema_cache: SimpleTTLCache = create_cache(max_items=16, ttl_seconds=300)
