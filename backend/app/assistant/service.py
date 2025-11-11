@@ -208,7 +208,8 @@ class AssistantService:
                     return design
             except Exception:
                 logger.exception("Failed to load app-design.md for %s/%s", request.project_id, request.run_id)
-        return _load_repo_app_design()
+        # Disable repo fallback so missing Azure blobs are obvious during testing.
+        return "app-design.md not found in Azure Storage for this run. Confirm the workflow upload succeeded."
 
     def generate(self, request: ChatRequest) -> ChatResponse:
         provider = self._settings.provider
