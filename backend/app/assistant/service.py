@@ -345,6 +345,9 @@ class AssistantService:
                 key=key,
                 label=key.replace("_", " ").title(),
                 response_format=descriptor.response_format,
+                total_context_window=descriptor.total_context_window,
+                max_input_tokens=descriptor.max_input_tokens,
+                max_output_tokens=descriptor.max_output_tokens,
             )
             for key, descriptor in self._provider_cfg.models.items()
         ]

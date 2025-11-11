@@ -80,6 +80,9 @@ class ModelOption(BaseModel):
     key: str
     label: str
     response_format: str | None = None
+    total_context_window: int | None = Field(default=None, ge=1)
+    max_input_tokens: int | None = Field(default=None, ge=1)
+    max_output_tokens: int | None = Field(default=None, ge=1)
 
 
 class AssistantConfig(BaseModel):

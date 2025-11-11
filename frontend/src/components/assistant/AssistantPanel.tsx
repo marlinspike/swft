@@ -7,7 +7,6 @@ import {
   RocketLaunchIcon,
   ShieldCheckIcon,
   ShieldExclamationIcon,
-  SparklesIcon,
   TableCellsIcon,
   WrenchScrewdriverIcon,
   XMarkIcon,
@@ -26,6 +25,7 @@ import {
   type AssistantStreamEvent,
 } from "@lib/types";
 import { fetchAssistantConfig, postAssistantMessage, streamAssistantMessage } from "@lib/api";
+import { InfoPopover } from "@components/InfoPopover";
 
 type AssistantPanelProps = {
   open: boolean;
@@ -63,23 +63,36 @@ const personaIcons: Record<AssistantPersona, JSX.Element> = {
   software_developer: <RocketLaunchIcon className="h-5 w-5" />,
 };
 
-const MAX_CONTEXT_CHARS = 12000;
+const DEFAULT_CONTEXT_CHAR_LIMIT = 12000;
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+const CONTEXT_SAFETY_RATIO = 0.6;
 
-const truncateContext = (label: string, value: string | null | undefined): string | null => {
+const truncateContext = (label: string, value: string | null | undefined, limit: number): string | null => {
   if (!value) return null;
-  if (value.length <= MAX_CONTEXT_CHARS) return value;
-  const truncated = value.slice(0, MAX_CONTEXT_CHARS);
-  return `${truncated}\n\n/* ${label} truncated to ${MAX_CONTEXT_CHARS} characters to fit model context. */`;
+  const boundary = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DEFAULT_CONTEXT_CHAR_LIMIT;
+  if (value.length <= boundary) return value;
+  const truncated = value.slice(0, boundary);
+  return `${truncated}\n\n/* ${label} truncated to ${boundary} characters to fit model context. */`;
+};
+
+const compactJson = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  try {
+    return JSON.stringify(JSON.parse(value));
+  } catch {
+    return value;
+  }
 };
 
 const facetDefinitions: Record<
   AssistantFacet,
-  { label: string; description: string; icon: JSX.Element; prompts: string[] }
+  { label: string; description: string; icon: JSX.Element; prompts: string[]; context: string }
 > = {
   run_manifest: {
     label: "Run Manifest",
     description: "Pipeline telemetry, policy status, and promotion readiness",
     icon: <DocumentTextIcon className="h-5 w-5" />,
+    context: "Includes the run manifest metadata (assessment summary, deployment, and policy status).",
     prompts: [
       "Summarize the pipeline outcome for this run.",
       "What control failures should block authorization?",
@@ -90,6 +103,7 @@ const facetDefinitions: Record<
     label: "SBOM",
     description: "Component inventory, licensing, and supplier drift",
     icon: <TableCellsIcon className="h-5 w-5" />,
+    context: "Includes the run manifest and the CycloneDX SBOM artifact for component analysis.",
     prompts: [
       "Highlight critical supply-chain risks in this SBOM.",
       "Which licenses require legal review before deployment?",
@@ -100,6 +114,7 @@ const facetDefinitions: Record<
     label: "Trivy",
     description: "Vulnerability landscape and remediation priorities",
     icon: <ShieldExclamationIcon className="h-5 w-5" />,
+    context: "Includes the run manifest and Trivy vulnerability report for this container image.",
     prompts: [
       "Summarize high and critical findings and their fixes.",
       "What runtime exposure does the top CVE introduce?",
@@ -110,6 +125,7 @@ const facetDefinitions: Record<
     label: "General",
     description: "Cross-run trends, architecture, and compliance alignment",
     icon: <ChatBubbleBottomCenterTextIcon className="h-5 w-5" />,
+    context: "Includes the run manifest, Trivy findings, and architecture notes (no SBOM content).",
     prompts: [
       "Explain how this system satisfies IL4/IL5 controls.",
       "What evidence should the AO review before signing off?",
@@ -120,6 +136,7 @@ const facetDefinitions: Record<
     label: "Architecture",
     description: "Deep dive into app-design.md design intent and controls",
     icon: <FaceSmileIcon className="h-5 w-5" />,
+    context: "Includes the run manifest and the uploaded app-design.md narrative for this run.",
     prompts: [
       "Explain the architecture risks called out in app-design.md.",
       "Which controls or dependencies are critical in this design?",
@@ -209,26 +226,49 @@ export const AssistantPanel = ({
   const [sendError, setSendError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const models = useMemo(() => config?.models ?? [], [config]);
+  const activeModel = useMemo(() => {
+    if (models.length === 0) return null;
+    if (modelKey) {
+      return models.find((model) => model.key === modelKey) ?? models[0];
+    }
+    return models[0];
+  }, [models, modelKey]);
+  const contextCharBudget = useMemo(() => {
+    const tokens = activeModel?.max_input_tokens ?? activeModel?.total_context_window ?? null;
+    if (tokens && tokens > 0) {
+      const estimatedChars = Math.floor(tokens * CHARS_PER_TOKEN_ESTIMATE * CONTEXT_SAFETY_RATIO);
+      return Math.max(estimatedChars, DEFAULT_CONTEXT_CHAR_LIMIT);
+    }
+    return DEFAULT_CONTEXT_CHAR_LIMIT;
+  }, [activeModel]);
 
-const buildContextPayload = useCallback((): Record<string, string> => {
-  const payload: Record<string, string> = {};
-  const runValue = truncateContext("Run Manifest", contextArtifacts.run);
-  if (runValue) payload["Run Manifest"] = runValue;
-  const sbomValue = truncateContext("SBOM Artifact", contextArtifacts.sbom);
-  const trivyValue = truncateContext("Trivy Report", contextArtifacts.trivy);
-  const appDesignValue = truncateContext("Architecture Context", contextArtifacts.appDesign);
-  if (facet === "sbom" && sbomValue) payload["SBOM Artifact"] = sbomValue;
-  if (facet === "trivy" && trivyValue) payload["Trivy Report"] = trivyValue;
-  if (facet === "general") {
-    if (sbomValue) payload["SBOM Artifact"] = sbomValue;
-    if (trivyValue) payload["Trivy Report"] = trivyValue;
-    if (appDesignValue) payload["Architecture Context"] = appDesignValue;
-  }
-  if (facet === "architecture" && appDesignValue) {
-    payload["Architecture Context"] = appDesignValue;
-  }
-  return payload;
-}, [contextArtifacts.run, contextArtifacts.sbom, contextArtifacts.trivy, contextArtifacts.appDesign, facet]);
+  const buildContextPayload = useCallback((): Record<string, string> => {
+    const payload: Record<string, string> = {};
+    const runEntry = { key: "Run Manifest", label: "Run Manifest", value: compactJson(contextArtifacts.run), include: true };
+    const sbomEntry = { key: "SBOM Artifact", label: "SBOM Artifact", value: compactJson(contextArtifacts.sbom), include: facet === "sbom" };
+    const trivyEntry = { key: "Trivy Report", label: "Trivy Report", value: compactJson(contextArtifacts.trivy), include: facet === "trivy" || facet === "general" };
+    const appDesignEntry = { key: "Architecture Context", label: "Architecture Context", value: contextArtifacts.appDesign, include: facet === "architecture" || facet === "general" };
+
+    const candidates = [runEntry, sbomEntry, trivyEntry, appDesignEntry].filter((entry) => entry.include && entry.value);
+    const slotCount = Math.max(candidates.length, 1);
+    const perChunkLimit = Math.max(DEFAULT_CONTEXT_CHAR_LIMIT, Math.floor(contextCharBudget / slotCount));
+
+    const pushContext = (entry: typeof runEntry) => {
+      if (!entry.value) return;
+      const text = truncateContext(entry.label, entry.value, perChunkLimit);
+      if (text) {
+        payload[entry.key] = text;
+      }
+    };
+
+    pushContext(runEntry);
+    candidates
+      .filter((entry) => entry.key !== "Run Manifest")
+      .forEach((entry) => pushContext(entry));
+
+    return payload;
+  }, [contextArtifacts.run, contextArtifacts.sbom, contextArtifacts.trivy, contextArtifacts.appDesign, facet, contextCharBudget]);
   useEffect(() => {
     if (!open || config) return;
     setLoadingConfig(true);
@@ -266,7 +306,14 @@ const buildContextPayload = useCallback((): Record<string, string> => {
 
   const facets = useMemo(() => config?.facets ?? Object.keys(facetDefinitions), [config]);
   const personas = useMemo(() => config?.personas ?? (Object.keys(personaLabels) as AssistantPersona[]), [config]);
-  const models = useMemo(() => config?.models ?? [], [config]);
+  const facetHelpItems = useMemo(
+    () =>
+      Object.values(facetDefinitions).map((definition) => ({
+        label: definition.label,
+        content: definition.context,
+      })),
+    []
+  );
 
   const resetConversation = () => {
     setConversationId(null);
@@ -451,9 +498,12 @@ const buildContextPayload = useCallback((): Record<string, string> => {
               <div className="grid flex-1 grid-rows-[auto,1fr,auto] gap-4 overflow-hidden">
                 <section className="space-y-4 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                      Facet
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        Facet
+                      </p>
+                      <InfoPopover title="Facet context" description="Artifacts automatically loaded for each facet." items={facetHelpItems} />
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {facets.map((facetKey) => {
                         const definition = facetDefinitions[facetKey as AssistantFacet];
