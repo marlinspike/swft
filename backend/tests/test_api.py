@@ -11,10 +11,10 @@ from app.api import deps
 
 def _seed(tmp_path: Path) -> None:
     data_dir = Path(__file__).parent / "data"
-    for container in ("runs", "sboms", "scans"):
+    for container in ("runs", "sboms", "scans", "appdesign"):
         dest = tmp_path / container
         dest.mkdir(parents=True, exist_ok=True)
-        for file in (data_dir / container).glob("*.json"):
+        for file in (data_dir / container).glob("*"):
             dest_file = dest / file.name
             dest_file.write_text(file.read_text(), encoding="utf-8")
 
@@ -26,6 +26,7 @@ def _settings(tmp_path: Path) -> AppSettings:
         container_sboms="sboms",
         container_scans="scans",
         container_runs="runs",
+        container_appdesign="appdesign",
         delimiter="-",
         local_blob_root=str(tmp_path)
     )
@@ -68,6 +69,7 @@ def test_runs_endpoint_returns_limited_history(tmp_path: Path) -> None:
         encoding="utf-8"
     )
     (tmp_path / "scans" / "demo-101-trivy.json").write_text("""{ "results": [] }""", encoding="utf-8")
+    (tmp_path / "appdesign" / "demo-101-appdesign.md").write_text("# Demo design 101\n", encoding="utf-8")
 
     settings = _settings(tmp_path)
     repository = LocalBlobRepository(str(tmp_path))
@@ -85,3 +87,21 @@ def test_runs_endpoint_returns_limited_history(tmp_path: Path) -> None:
     assert len(data) == 2  # only two runs exist
     assert data[0]["run_id"] == "101"
     assert data[0]["sbom_component_total"] == 2
+
+
+def test_artifact_endpoint_returns_app_design(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    settings = _settings(tmp_path)
+    repository = LocalBlobRepository(str(tmp_path))
+    catalog = ArtifactCatalogService(repository, settings)
+    app = create_app()
+
+    app.dependency_overrides[deps.get_settings_dep] = lambda: settings
+    app.dependency_overrides[deps.get_catalog] = lambda: catalog
+    client = TestClient(app)
+
+    response = client.get("/projects/demo/runs/100/artifacts/appdesign")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "content" in payload
+    assert "architecture" in payload["content"].lower()

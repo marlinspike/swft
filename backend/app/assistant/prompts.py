@@ -30,6 +30,7 @@ FACET_DESCRIPTIONS: dict[Facet, str] = {
     Facet.sbom: "Interpret the Software Bill of Materials to surface component risk, licensing, and supply-chain drift.",
     Facet.trivy: "Review the Trivy scan results, prioritising vulnerability severity, fixes, and runtime exposure.",
     Facet.general: "Answer broad questions drawing from design context and the supplied manifests.",
+    Facet.architecture: "Focus exclusively on the architecture context captured in app-design.md to explain design intent, controls, and dependencies.",
 }
 
 

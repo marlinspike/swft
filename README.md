@@ -25,7 +25,7 @@ The workflow still produces hardened artifacts named `<project>-<run>-{sbom|triv
 ## Operating Footprint & Stack
 
 - **Source control prerequisites:** A private GitHub organization and repository (as prescribed by the DoD reference design) to host workflows, CodeQL, and deployment secrets.
-- **Evidence store:** A single Azure Storage account (Standard tier is sufficient) with three containers for SBOM, Trivy, and run metadata. Local filesystem mirrors keep developer environments inexpensive.
+- **Evidence store:** A single Azure Storage account (Standard tier is sufficient) with flat containers for SBOM, Trivy, run manifests, and `app-design.md`. Local filesystem mirrors keep developer environments inexpensive.
 - **Optional runtime:** Azure Container Instances, or any container host you pick, for showcasing the promoted workload.
 - **Implementation stack:** FastAPI + Python on the backend, React + Vite + Tailwind on the frontend, Nivo for visualization; modern, widely adopted OSS that is easy for teams to maintain or extend.
 
@@ -57,6 +57,7 @@ Copy `backend/.env.example` to `backend/.env` and fill in the values, or export 
 - `AZURE_STORAGE_CONTAINER_SBOMS` (default `sboms`)
 - `AZURE_STORAGE_CONTAINER_SCANS` (default `scans`)
 - `AZURE_STORAGE_CONTAINER_RUNS` (default `runs`)
+- `AZURE_STORAGE_CONTAINER_APPDESIGN` (default `appdesign`)
 - `AZURE_STORAGE_BLOB_PREFIX_DELIMITER` (default `-`)
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (service principal, optional if managed identity is available)
 - `LOCAL_BLOB_ROOT` – optional filesystem directory that mirrors the Azure containers for offline development/testing
@@ -205,7 +206,7 @@ On push to `main` or manual dispatch the pipeline:
 4. Generates a CycloneDX SBOM (Syft/Anchore).
 5. Runs Trivy twice (JSON + SARIF) and enforces optional severity policy.
 6. Uploads SARIF to GitHub code scanning, where CodeQL pairs with container results for best-in-class static analysis coverage.
-7. Optionally uploads SBOM, Trivy JSON, and run manifest to Azure Blob Storage using flat names `<project>-<run>-*.json`.
+7. Optionally uploads SBOM, Trivy JSON, run manifest, and `app-design.md` to Azure Blob Storage using flat names `<project>-<run>-*`.
 8. Deploys the image to Azure Container Instances and records the public endpoint.
 9. Publishes artifacts back to GitHub Actions for traceability.
 
@@ -228,6 +229,7 @@ Outputs persisted per run:
 - `trivy-report.json`
 - `trivy-results.sarif`
 - `run.json` (portal metadata contract)
+- `app-design.md` (architecture context per run)
 - `aci-endpoint.txt`
 
 ## CodeQL Static Analysis

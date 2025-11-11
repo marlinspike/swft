@@ -12,6 +12,8 @@ import { JsonModal } from "@components/JsonModal";
 import { InfoPopover } from "@components/InfoPopover";
 import { AssistantPanel } from "@components/assistant/AssistantPanel";
 import { SparklesIcon } from "@heroicons/react/24/outline";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Full run detail page: fetches the main run record, enriches it with SBOM/Trivy summaries,
 // and renders a stack of cards with provenance and security insights.
@@ -623,9 +625,10 @@ export const RunPage = () => {
   const [sbomRaw, setSbomRaw] = useState<string | null>(null);
   const [trivySummary, setTrivySummary] = useState<TrivySummary | null>(null);
   const [trivyRaw, setTrivyRaw] = useState<string | null>(null);
+  const [appDesignContent, setAppDesignContent] = useState<string | null>(null);
   const [artifactError, setArtifactError] = useState<string | null>(null);
   const [loadingArtifacts, setLoadingArtifacts] = useState<boolean>(false);
-  const [rawModal, setRawModal] = useState<{ title: string; content: string; fileName?: string } | null>(null);
+  const [rawModal, setRawModal] = useState<{ title: string; content: string; fileName?: string; mimeType?: string; downloadExtension?: string } | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantFacet, setAssistantFacet] = useState<AssistantFacet>("run_manifest");
   const [assistantPrompt, setAssistantPrompt] = useState<string | undefined>(undefined);
@@ -671,6 +674,24 @@ export const RunPage = () => {
           setTrivySummary(null);
           setTrivyRaw(null);
         }
+        const hasAppDesign = data.artifacts.some((artifact) => artifact.artifact_type === "appdesign");
+        if (hasAppDesign) {
+          requests.push(
+            fetchArtifact(projectId, runId, "appdesign").then((payload) => {
+              if (cancelled) return;
+              let content: string | null = null;
+              if (typeof payload === "string") {
+                content = payload;
+              } else if (payload && typeof payload === "object" && "content" in payload) {
+                const value = (payload as { content?: unknown }).content;
+                content = typeof value === "string" ? value : value != null ? String(value) : "";
+              }
+              setAppDesignContent(content ?? "");
+            })
+          );
+        } else {
+          setAppDesignContent(null);
+        }
         await Promise.all(requests);
       } catch (err) {
         if (!cancelled) {
@@ -689,6 +710,10 @@ export const RunPage = () => {
 
   // Prepare formatted JSON strings ahead of time so the modal opens instantly.
   const runRaw = useMemo(() => (data ? formatJson(data.metadata) : null), [data]);
+  const appDesignArtifact = useMemo(() => data?.artifacts.find((artifact) => artifact.artifact_type === "appdesign"), [data]);
+  const appDesignFileName = appDesignArtifact?.blob_name ?? "app-design.md";
+  const hasAppDesignDocument = appDesignContent !== null;
+  const appDesignHasBody = (appDesignContent ?? "").trim().length > 0;
   const trivyPolicy = useMemo(() => {
     // Normalise the Trivy policy fields so we can display the exact scan/fail thresholds.
     if (!data) return null;
@@ -745,7 +770,7 @@ export const RunPage = () => {
       ? (
         <button
           type="button"
-          onClick={() => setRawModal({ title: label, content, fileName })}
+          onClick={() => setRawModal({ title: label, content, fileName, mimeType: "application/json", downloadExtension: "json" })}
           className="rounded-lg border border-blue-300 px-3 py-1 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-500 dark:border-blue-500/40 dark:text-blue-200 dark:hover:border-blue-400 dark:hover:text-blue-100"
         >
           View raw JSON
@@ -862,6 +887,54 @@ export const RunPage = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400">No Trivy report was captured for this run.</p>
         )}
       </CollapsibleSection>
+      <CollapsibleSection
+        title="Architecture context (app-design.md)"
+        description="Per-run design notes included with the workflow artifacts."
+        actions={
+          hasAppDesignDocument
+            ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRawModal({
+                      title: "app-design.md",
+                      content: appDesignContent ?? "",
+                      fileName: appDesignFileName,
+                      mimeType: "text/markdown",
+                      downloadExtension: "md",
+                    })
+                  }
+                  className="rounded-lg border border-blue-300 px-3 py-1 text-sm font-medium text-blue-600 transition hover:border-blue-400 hover:text-blue-500 dark:border-blue-500/40 dark:text-blue-200 dark:hover:border-blue-400 dark:hover:text-blue-100"
+                >
+                  View full document
+                </button>
+              </div>
+            )
+            : null
+        }
+      >
+        {loadingArtifacts ? (
+          <LoadingState message="Loading architecture notes" />
+        ) : artifactError ? (
+          <ErrorState message={artifactError} />
+        ) : hasAppDesignDocument ? (
+          appDesignHasBody ? (
+            <div className="max-h-[32rem] overflow-y-auto rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                className="prose prose-slate max-w-none dark:prose-invert prose-headings:scroll-mt-16"
+              >
+                {appDesignContent ?? ""}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">The uploaded document is empty.</p>
+          )
+        ) : (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No app-design.md artifact was provided for this run.</p>
+        )}
+      </CollapsibleSection>
       <AssistantPanel
         open={assistantOpen}
         onClose={() => {
@@ -876,9 +949,19 @@ export const RunPage = () => {
           run: runRaw,
           sbom: sbomRaw,
           trivy: trivyRaw,
+          appDesign: appDesignContent,
         }}
       />
-      {rawModal && <JsonModal title={rawModal.title} content={rawModal.content} fileName={rawModal.fileName} onClose={() => setRawModal(null)} />}
+      {rawModal && (
+        <JsonModal
+          title={rawModal.title}
+          content={rawModal.content}
+          fileName={rawModal.fileName}
+          mimeType={rawModal.mimeType}
+          downloadExtension={rawModal.downloadExtension}
+          onClose={() => setRawModal(null)}
+        />
+      )}
     </div>
   );
 };
