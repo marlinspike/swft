@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /srv/app
 COPY pyproject.toml README.md ./
+COPY lookup ./lookup
 COPY app ./app
 # Create a dedicated virtualenv to carry into the runtime layer.
 RUN python -m venv /opt/venv && \
@@ -42,8 +43,9 @@ RUN apt-get update \
 # Run as an unprivileged user for better isolation.
 RUN groupadd --system swft && useradd --system --gid swft swft
 COPY --from=builder /opt/venv /opt/venv
-# Application files are copied for logging/templates that may be read at runtime.
+# Application files and lookup data.
 COPY app ./app
+COPY lookup ./lookup
 USER swft
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

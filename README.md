@@ -198,6 +198,39 @@ A Docker image for the demo can still be built with `docker build -t swft-demo s
 
 Workflow file: `.github/workflows/deploy.yml`
 
+## Compliance Authoring Engine CLI (preview)
+
+This repo now ships a Typer-based CLI under the `swft` entrypoint. The CLI will ingest authoritative control catalogs, evidence, and Azure Policy snapshots in later steps; for now it provides configuration inspection plus the Azure Database for PostgreSQL migration runner.
+
+### Environment configuration
+
+1. Copy `.env.example` to `.env` (already gitignored).
+2. Provide the required Azure PostgreSQL details:
+   - `SWFT_DB_HOST`: fully qualified Flexible Server host (e.g., `swft-db.postgres.database.azure.com`)
+   - `SWFT_DB_NAME`: logical database containing the compliance schema
+   - `SWFT_DB_USER`: Microsoft Entra principal (preferred) or database login
+   - `SWFT_DB_AUTH`: `entra` for token auth or `password` for traditional credentials
+   - `SWFT_DB_PASSWORD`: only when `SWFT_DB_AUTH=password`
+   - Optional overrides: `SWFT_DB_AAD_SCOPE`, `SWFT_DB_PORT`, `SWFT_DB_TIMEOUT`
+3. (Optional) Set `SWFT_HOME`, `SWFT_STORE`, `SWFT_PINNED`, and `SWFT_OUTPUTS` to control where the CLI writes cache files; defaults live under `~/.swft/`.
+
+You can mirror the same values in `swft.toml` if you prefer checked-in, non-secret defaults. Environment variables and `.env` always take precedence.
+
+### First commands
+
+```bash
+# Show the resolved configuration (after filling .env)
+uv run swft config show
+
+# Apply or verify the database schema
+uv run swft store migrate
+
+# Confirm connectivity and review applied migrations
+uv run swft store doctor
+```
+
+The CLI automatically creates local working directories and uses Azure AD token authentication when configured with `SWFT_DB_AUTH=entra`.
+
 On push to `main` or manual dispatch the pipeline:
 
 1. Builds and pushes the container image to ACR (using `samples/fastapi-demo/Dockerfile`).
