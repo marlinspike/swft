@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
+from tempfile import NamedTemporaryFile
+from typing import Iterable, Sequence
+from datetime import datetime
 
 from swft.compliance.config import Config as SwftConfig, load_config
 from swft.compliance.projects import ProjectsManager, ProjectRecord
@@ -18,6 +20,9 @@ from swft.compliance.mapping import ensure_implemented_requirement
 from swft.compliance.store import get_connection
 from .azure_services import get_azure_services, get_azure_service_lookup
 from .azure_regions import get_azure_regions, get_azure_region_lookup
+from .catalog import ArtifactCatalogService
+from .exceptions import NotFoundError, RepositoryError
+from ..models.domain import ArtifactDescriptor
 
 
 class SwftComplianceService:
@@ -158,6 +163,93 @@ class SwftComplianceService:
         evidence = self.signature_ingestor.ingest(project=project, run_id=run_id, signature_path=signature_path, digest=digest, verified=verified)
         return {"evidence_id": evidence.id, "run_id": run_id, "kind": "signature", "verified": verified}
 
+    def ingest_evidence_from_storage(
+        self,
+        *,
+        project_key: str,
+        run_id: str,
+        catalog: ArtifactCatalogService,
+        kinds: Iterable[str] | None = None,
+    ) -> list[dict[str, object]]:
+        """Fetch artifacts from the blob catalog and ingest them as evidence."""
+        supported = ("sbom", "trivy", "signature")
+        requested = list(dict.fromkeys([kind.lower() for kind in (kinds or ("sbom", "trivy"))]))
+        invalid = [kind for kind in requested if kind not in supported]
+        if invalid:
+            raise ValueError(f"Unsupported artifact kinds: {', '.join(invalid)}.")
+
+        try:
+            detail = catalog.run_detail(project_key, run_id)
+        except NotFoundError:
+            raise
+
+        descriptors: dict[str, list[ArtifactDescriptor]] = {}
+        for descriptor in detail.artifacts:
+            descriptors.setdefault(descriptor.artifact_type, []).append(descriptor)
+
+        results: list[dict[str, object]] = []
+        for kind in requested:
+            if kind == "signature":
+                results.append(
+                    {
+                        "kind": kind,
+                        "status": "missing",
+                        "message": "Signature evidence is not currently published to Azure Storage. Upload the cosign JSON manually.",
+                    }
+                )
+                continue
+
+            descriptor = _pick_descriptor(descriptors.get(kind))
+            if descriptor is None:
+                results.append(
+                    {
+                        "kind": kind,
+                        "status": "missing",
+                        "message": f"No {kind.upper()} artifact found for project '{project_key}' run '{run_id}'.",
+                    }
+                )
+                continue
+
+            try:
+                content = catalog.fetch_artifact_text(descriptor)
+            except RepositoryError as exc:
+                results.append({"kind": kind, "status": "failed", "message": str(exc)})
+                continue
+
+            temp_path = _write_temp_artifact(content, suffix=".json")
+            try:
+                if kind == "sbom":
+                    ingest_result = self.ingest_sbom(project_key=project_key, run_id=run_id, sbom_path=temp_path)
+                    metadata = {"components": ingest_result["components"]}
+                elif kind == "trivy":
+                    ingest_result = self.ingest_trivy(
+                        project_key=project_key,
+                        run_id=run_id,
+                        report_path=temp_path,
+                        artifact_hint=descriptor.blob_name,
+                    )
+                    metadata = {"findings": ingest_result["findings"]}
+                else:  # pragma: no cover - guarded by supported list
+                    ingest_result = None
+                    metadata = None
+
+                results.append(
+                    {
+                        "kind": kind,
+                        "status": "stored",
+                        "evidence_id": ingest_result["evidence_id"] if ingest_result else None,
+                        "metadata": metadata,
+                    }
+                )
+            except ValueError as exc:
+                results.append({"kind": kind, "status": "failed", "message": str(exc)})
+            finally:
+                try:
+                    temp_path.unlink()
+                except FileNotFoundError:
+                    pass
+        return results
+
     def list_azure_services(self) -> list[str]:
         return get_azure_services()
 
@@ -169,3 +261,15 @@ class SwftComplianceService:
 def get_swft_service() -> SwftComplianceService:
     """FastAPI dependency wrapper."""
     return SwftComplianceService()
+
+
+def _pick_descriptor(candidates: Sequence[ArtifactDescriptor] | None) -> ArtifactDescriptor | None:
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: item.last_modified or datetime.min, reverse=True)[0]
+
+
+def _write_temp_artifact(content: str, *, suffix: str) -> Path:
+    with NamedTemporaryFile("w", delete=False, suffix=suffix, encoding="utf-8") as tmp:
+        tmp.write(content)
+        return Path(tmp.name)

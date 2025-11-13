@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 import shutil
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Body
 from pydantic import BaseModel
 
 from ...models.swft import (
@@ -16,10 +16,19 @@ from ...models.swft import (
     SwftProjectUpdate,
     SwftParameterModel,
     EvidenceIngestResponse,
+    StorageEvidenceResponse,
+    AzurePolicySetModel,
+    AzurePolicyImportRequest,
 )
 from ...services.swft import SwftComplianceService, get_swft_service
 from ...services.azure_services import get_azure_services
 from ...services.azure_regions import get_azure_regions
+from ..deps import get_catalog
+from ...services.catalog import ArtifactCatalogService
+from ...services.exceptions import NotFoundError
+from ...services.azure_policy_sets import list_policy_sets, get_policy_set
+from ...services.azure_policy_sets import AzurePolicySet
+from swft.compliance.azure.policy_source import AzurePolicySetSource, PolicyDownloadError
 
 router = APIRouter(prefix="/swft", tags=["swft"])
 
@@ -58,6 +67,15 @@ def _parameter_model(control_id: str, param) -> SwftParameterModel:
         description=param.description,
         allowed_values=param.values,
         current_value=param.current_value,
+    )
+
+
+def _policy_set_model(policy: AzurePolicySet) -> AzurePolicySetModel:
+    return AzurePolicySetModel(
+        id=policy.id,
+        label=policy.label,
+        default_scope=policy.default_scope,
+        description=policy.description,
     )
 
 
@@ -109,6 +127,40 @@ async def import_policy_states(
     return PolicyStateResponse(**result)
 
 
+@router.get("/policy/builtins", response_model=list[AzurePolicySetModel])
+def list_builtin_policies() -> list[AzurePolicySetModel]:
+    return [_policy_set_model(policy) for policy in list_policy_sets()]
+
+
+@router.post("/policy/builtins", response_model=PolicyImportResponse)
+def import_builtin_policy(
+    payload: AzurePolicyImportRequest,
+    service: SwftComplianceService = Depends(get_swft_service),
+) -> PolicyImportResponse:
+    policy = get_policy_set(payload.policy_id)
+    if policy is None:
+        raise HTTPException(status_code=404, detail=f"Unknown policy set '{payload.policy_id}'.")
+    source = AzurePolicySetSource()
+    try:
+        data = source.fetch(policy.filename)
+    except PolicyDownloadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    scope = payload.scope or policy.default_scope
+    with NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+        tmp.write(data)
+        tmp_path = Path(tmp.name)
+    try:
+        result = service.import_policy_initiative(file_path=tmp_path, name=policy.id, scope=scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+    return PolicyImportResponse(**result)
+
+
 @router.get("/{project_id}/project", response_model=SwftProjectModel)
 def fetch_project(
     project_id: str,
@@ -151,6 +203,10 @@ def list_control_parameters(
 
 class ParameterUpdate(BaseModel):
     value: str
+
+
+class StorageIngestRequest(BaseModel):
+    kinds: list[str] | None = None
 
 
 @router.put("/{project_id}/controls/{control_id}/parameters/{param_id}")
@@ -229,6 +285,24 @@ async def upload_signature(
         kind="signature",
         metadata={"verified": result["verified"], "digest": digest},
     )
+
+
+@router.post("/{project_id}/runs/{run_id}/evidence/from-storage", response_model=StorageEvidenceResponse)
+def ingest_evidence_from_storage(
+    project_id: str,
+    run_id: str,
+    payload: StorageIngestRequest | None = Body(default=None),
+    service: SwftComplianceService = Depends(get_swft_service),
+    catalog: ArtifactCatalogService = Depends(get_catalog),
+) -> StorageEvidenceResponse:
+    kinds = payload.kinds if payload else None
+    try:
+        results = service.ingest_evidence_from_storage(project_key=project_id, run_id=run_id, catalog=catalog, kinds=kinds)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StorageEvidenceResponse(project_id=project_id, run_id=run_id, results=results)
 @router.get("/services", response_model=list[str])
 def list_services() -> list[str]:
     """Return the curated list of Azure services."""

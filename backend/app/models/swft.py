@@ -49,3 +49,29 @@ class EvidenceIngestResponse(BaseModel):
     run_id: str
     kind: str
     metadata: dict | None = None
+
+
+class StorageEvidenceItem(BaseModel):
+    kind: str
+    status: str
+    message: str | None = None
+    evidence_id: int | None = None
+    metadata: dict | None = None
+
+
+class StorageEvidenceResponse(BaseModel):
+    project_id: str
+    run_id: str
+    results: Sequence[StorageEvidenceItem]
+
+
+class AzurePolicySetModel(BaseModel):
+    id: str
+    label: str
+    default_scope: str
+    description: str
+
+
+class AzurePolicyImportRequest(BaseModel):
+    policy_id: str
+    scope: str | None = None

@@ -194,7 +194,10 @@ class ArtifactCatalogService:
     def _load_run_metadata(self, project_id: str, run_id: str) -> dict[str, object]:
         """Read the canonical run.json metadata file for the run."""
         blob_name = build_blob_name(project_id, run_id, RUN_ARTIFACT_NAME, self._settings.storage.delimiter)
-        raw = self._repository.download_text(self._settings.storage.container_runs, blob_name)
+        try:
+            raw = self._repository.download_text(self._settings.storage.container_runs, blob_name)
+        except RepositoryError as exc:
+            raise NotFoundError(f"Run manifest for project '{project_id}' run '{run_id}' not found.") from exc
         try:
             return _loads_json(raw.encode("utf-8"))
         except Exception as exc:
