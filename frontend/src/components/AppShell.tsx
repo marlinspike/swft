@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ThemeToggle } from "@components/ThemeToggle";
+import { SWFT_WORKSPACE_ENABLED } from "@lib/features";
 
 const NavLink = ({ to, label }: { to: string; label: string }) => {
   const location = useLocation();
@@ -30,7 +31,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => (
         <div className="flex items-center gap-4">
           <nav className="flex items-center gap-2">
             <NavLink to="/" label="Dashboard" />
-            <NavLink to="/swft" label="SWFT Workspace" />
+            {SWFT_WORKSPACE_ENABLED && <NavLink to="/swft" label="SWFT Workspace" />}
           </nav>
           <ThemeToggle />
         </div>
