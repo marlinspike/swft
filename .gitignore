@@ -8,6 +8,7 @@ azure-credentials.json
 .env
 .DS_Store
 Dev_Backlog/
+.scratch/
 
 # Python-generated files
 __pycache__/
