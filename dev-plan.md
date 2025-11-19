@@ -17,15 +17,15 @@
 
 ## Phase 4 — Operations
 - **Deployment**  
-  - Containerize backend/frontend.  
+  - ~~Containerize backend/frontend~~ -- DONE  
   - Deploy to Azure App Service or Container Apps with managed identity.  
 - **Monitoring**: Azure Monitor dashboards, alerts on 4xx/5xx, blob access metrics.  
 - **Security**: routine key rotation, penetration testing, review of blob access policies.  
 - **Documentation**: runbook for SCAs, onboarding guide for project teams, API reference.
 
 ## Phase 5 — Backlog & Future Work
-- Persist parsed SBOM/vulnerability data into Cosmos DB/PostgreSQL for cross-run analytics.
-- GenAI assists for what-if analysis, cross-project findings, remediation advice, executive summaries.
+- ~~Persist parsed SBOM/vulnerability data into Cosmos DB/PostgreSQL for cross-run analytics~~ -- DONE
+- ~~GenAI assists for what-if analysis, cross-project findings, remediation advice, executive summaries~~ -- DONE
 - Cross-project diffing (highlight new vulnerabilities since previous run).
 - Runtime attestation data ingestion (e.g., Ratify, Defender for Cloud).
 - Support additional artifact types (Cosign bundle, Terraform plans, provenance attestations).
