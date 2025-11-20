@@ -97,7 +97,7 @@ jobs:
             image_name: fastapi-demo
             deploy: true  # Set to true only for images that should be redeployed to ACI during the workflow run.
           - name: backend
-            context: ./backend
+            context: .
             dockerfile: ./backend/Dockerfile
             image_name: swft-backend
             deploy: false
