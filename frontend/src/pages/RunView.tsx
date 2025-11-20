@@ -23,7 +23,9 @@ type SbomSummary = {
   uniqueTypes: number;
   uniqueLicenses: number;
   typeBreakdown: { label: string; count: number }[];
-  topComponents: { name: string; version: string; type: string }[];
+  licenseGapsByType: Record<string, number>;
+  components: { name: string; version: string; type: string; missingLicense: boolean; supplier?: string | null }[];
+  topComponents: { name: string; version: string; type: string; missingLicense: boolean; supplier?: string | null }[];
   topLicenses: { name: string; count: number }[];
   baseImage: { name: string; version?: string; supplier?: string } | null;
   componentsWithoutLicense: number;
@@ -45,6 +47,12 @@ type TrivySummary = {
   totalFindings: number;
   severityCounts: { severity: string; count: number }[];
   topFindings: TrivyFinding[];
+  packageFindings: {
+    name: string;
+    highestSeverity: string | null;
+    fixableCount: number;
+    total: number;
+  }[];
   platform: {
     osFamily: string | null;
     osName: string | null;
@@ -118,9 +126,10 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
   const components = Array.isArray(payload.components) ? payload.components : [];
   const typeCounts = new Map<string, number>();
   const licenseCounts = new Map<string, number>();
-  const topComponents = [] as { name: string; version: string; type: string }[];
+  const componentList = [] as { name: string; version: string; type: string; missingLicense: boolean; supplier?: string | null }[];
   let baseImage: { name: string; version?: string; supplier?: string } | null = null;
   let componentsWithoutLicense = 0;
+  const missingByType = new Map<string, number>();
   const ecosystemCounts = new Map<string, number>();
   const metadata = typeof payload.metadata === "object" && payload.metadata !== null ? (payload.metadata as Record<string, unknown>) : null;
   const metadataComponent = metadata && typeof metadata.component === "object" && metadata.component !== null ? (metadata.component as Record<string, unknown>) : null;
@@ -158,9 +167,21 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
     const name = typeof component.name === "string" ? component.name : "Unknown";
     const version = typeof component.version === "string" ? component.version : "N/A";
     const type = typeof component.type === "string" ? component.type : "unknown";
+    const supplierField = component.supplier;
+    const supplier =
+      typeof supplierField === "object" && supplierField !== null
+        ? (supplierField as Record<string, unknown>).name ?? (supplierField as Record<string, unknown>).url ?? null
+        : typeof supplierField === "string"
+          ? supplierField
+          : null;
+    const typeKey = type.toLowerCase();
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
     const licenses = Array.isArray(component.licenses) ? component.licenses : [];
-    if (licenses.length === 0) componentsWithoutLicense += 1;
+    const missingLicense = licenses.length === 0;
+    if (missingLicense) {
+      componentsWithoutLicense += 1;
+      missingByType.set(typeKey, (missingByType.get(typeKey) ?? 0) + 1);
+    }
     for (const lic of licenses) {
       if (typeof lic !== "object" || lic === null) continue;
       const licenseInfo = lic as Record<string, unknown>;
@@ -184,7 +205,7 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
         ecosystemCounts.set(label, (ecosystemCounts.get(label) ?? 0) + 1);
       }
     }
-    topComponents.push({ name, version, type });
+    componentList.push({ name, version, type, missingLicense, supplier: typeof supplier === "string" ? supplier : null });
   }
   const sortedTypes = Array.from(typeCounts.entries())
     .sort((a, b) => b[1] - a[1])
@@ -196,7 +217,9 @@ const buildSbomSummary = (payload: Record<string, unknown>): SbomSummary => {
     uniqueTypes: typeCounts.size,
     uniqueLicenses: licenseCounts.size,
     typeBreakdown: sortedTypes.slice(0, 5),
-    topComponents: topComponents.slice(0, 8),
+    licenseGapsByType: Object.fromEntries(missingByType),
+    components: componentList,
+    topComponents: componentList.slice(0, 8),
     topLicenses: sortedLicenses.slice(0, 5).map(([name, count]) => ({ name, count })),
     baseImage,
     componentsWithoutLicense,
@@ -282,10 +305,34 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
       return aRank - bRank;
     })
     .slice(0, 10);
+
+  const packageAggregates = new Map<string, { name: string; highestSeverity: string | null; fixableCount: number; total: number }>();
+  for (const finding of findings) {
+    const key = finding.packageName.toLowerCase();
+    const current = packageAggregates.get(key);
+    const severityRank = severityOrder.indexOf(finding.severity);
+    if (!current) {
+      packageAggregates.set(key, {
+        name: finding.packageName,
+        highestSeverity: finding.severity,
+        fixableCount: finding.fixedVersion && finding.fixedVersion !== "—" ? 1 : 0,
+        total: 1
+      });
+    } else {
+      current.total += 1;
+      if (finding.fixedVersion && finding.fixedVersion !== "—") current.fixableCount += 1;
+      const currentRank = current.highestSeverity ? severityOrder.indexOf(current.highestSeverity) : severityOrder.length;
+      if (severityRank !== -1 && (currentRank === -1 || severityRank < currentRank)) {
+        current.highestSeverity = finding.severity;
+      }
+    }
+  }
+
   return {
     totalFindings: findings.length,
     severityCounts: sortedSeverity,
     topFindings: rankedFindings,
+    packageFindings: Array.from(packageAggregates.values()),
     platform: {
       osFamily,
       osName,
@@ -329,113 +376,286 @@ const TypeBadge = ({ label, count }: { label: string; count: number }) => (
   </span>
 );
 
-const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
-  <div className="space-y-6">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <p className="text-sm text-slate-600 dark:text-slate-300">
-        Component inventory, base image details, and license coverage derived from the uploaded SBOM.
-      </p>
-      <InfoPopover title="SBOM insights" description={infoHelp.sbom.description} items={infoHelp.sbom.items} />
-    </div>
-    <div className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-5 dark:border-blue-500/30 dark:bg-blue-500/10">
-        <p className="text-sm text-blue-700 dark:text-blue-200">Total components</p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.totalComponents}</p>
+const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: TrivySummary | null }) => {
+  const [typeLens, setTypeLens] = useState<"inventory" | "license" | "base" | "vuln" | "supplier">("inventory");
+  const typeCountLookup = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of summary.typeBreakdown) {
+      map.set(entry.label.toLowerCase(), entry.count);
+    }
+    return map;
+  }, [summary.typeBreakdown]);
+
+  const licenseGapLookup = useMemo(() => {
+    const map = new Map<string, number>();
+    Object.entries(summary.licenseGapsByType ?? {}).forEach(([key, value]) => map.set(key.toLowerCase(), value));
+    return map;
+  }, [summary.licenseGapsByType]);
+
+  const trivyPackageLookup = useMemo(() => {
+    const map = new Map<string, { highestSeverity: string | null; fixableCount: number; total: number }>();
+    if (trivy?.packageFindings) {
+      for (const pkg of trivy.packageFindings) {
+        map.set(pkg.name.toLowerCase(), {
+          highestSeverity: pkg.highestSeverity,
+          fixableCount: pkg.fixableCount,
+          total: pkg.total
+        });
+      }
+    }
+    return map;
+  }, [trivy?.packageFindings]);
+
+  const typeBreakdown = useMemo(() => {
+    const items = [...summary.typeBreakdown];
+    if (typeLens === "license") {
+      return items.sort((a, b) => {
+        const aMissing = licenseGapLookup.get(a.label.toLowerCase()) ?? 0;
+        const bMissing = licenseGapLookup.get(b.label.toLowerCase()) ?? 0;
+        if (bMissing !== aMissing) return bMissing - aMissing;
+        return b.count - a.count;
+      });
+    }
+    if (typeLens === "base") {
+      return items.sort((a, b) => {
+        const aIsOs = a.label.toLowerCase() === "operating-system";
+        const bIsOs = b.label.toLowerCase() === "operating-system";
+        if (aIsOs && !bIsOs) return -1;
+        if (bIsOs && !aIsOs) return 1;
+        return b.count - a.count;
+      });
+    }
+    return items;
+  }, [licenseGapLookup, summary.typeBreakdown, typeLens]);
+
+  const highlightedComponents = useMemo(() => {
+    const list = summary.components?.length ? [...summary.components] : [...summary.topComponents];
+    if (list.length === 0) return [];
+    const aggregated = new Map<
+      string,
+      { name: string; version: string; type: string; missingLicense: boolean; count: number }
+    >();
+    for (const item of list) {
+      const key = `${item.name}@@${item.version}@@${item.type}`.toLowerCase();
+      const existing = aggregated.get(key);
+      if (existing) {
+        existing.count += 1;
+        existing.missingLicense = existing.missingLicense || item.missingLicense;
+      } else {
+        aggregated.set(key, { ...item, count: 1 });
+      }
+    }
+    const aggregateList = Array.from(aggregated.values());
+    if (typeLens === "license") {
+      return aggregateList
+        .sort((a, b) => {
+          if (a.missingLicense && !b.missingLicense) return -1;
+          if (b.missingLicense && !a.missingLicense) return 1;
+          const aMissing = licenseGapLookup.get(a.type.toLowerCase()) ?? 0;
+          const bMissing = licenseGapLookup.get(b.type.toLowerCase()) ?? 0;
+          if (bMissing !== aMissing) return bMissing - aMissing;
+          if (b.count !== a.count) return b.count - a.count;
+          return a.name.localeCompare(b.name) || a.version.localeCompare(b.version);
+        })
+        .slice(0, 8);
+    }
+    if (typeLens === "vuln") {
+      const severityRank = (severity: string | null) => {
+        const idx = severity ? severityOrder.indexOf(severity) : -1;
+        return idx === -1 ? severityOrder.length : idx;
+      };
+      return aggregateList
+        .sort((a, b) => {
+          const aPkg = trivyPackageLookup.get(a.name.toLowerCase());
+          const bPkg = trivyPackageLookup.get(b.name.toLowerCase());
+          const aRank = severityRank(aPkg?.highestSeverity ?? null);
+          const bRank = severityRank(bPkg?.highestSeverity ?? null);
+          if (aRank !== bRank) return aRank - bRank;
+          const aFix = aPkg?.fixableCount ?? 0;
+          const bFix = bPkg?.fixableCount ?? 0;
+          if (bFix !== aFix) return bFix - aFix;
+          const aTotal = aPkg?.total ?? 0;
+          const bTotal = bPkg?.total ?? 0;
+          if (bTotal !== aTotal) return bTotal - aTotal;
+          return a.name.localeCompare(b.name) || a.version.localeCompare(b.version);
+        })
+        .slice(0, 8);
+    }
+    if (typeLens === "supplier") {
+      return aggregateList
+        .sort((a, b) => {
+          const aMissing = !a.supplier || `${a.supplier}`.trim().length === 0;
+          const bMissing = !b.supplier || `${b.supplier}`.trim().length === 0;
+          if (aMissing && !bMissing) return -1;
+          if (bMissing && !aMissing) return 1;
+          const aCount = typeCountLookup.get(a.type.toLowerCase()) ?? 0;
+          const bCount = typeCountLookup.get(b.type.toLowerCase()) ?? 0;
+          if (bCount !== aCount) return bCount - aCount;
+          return a.name.localeCompare(b.name) || a.version.localeCompare(b.version);
+        })
+        .slice(0, 8);
+    }
+    if (typeLens === "base") {
+      return aggregateList
+        .sort((a, b) => {
+          const aIsOs = a.type.toLowerCase() === "operating-system";
+          const bIsOs = b.type.toLowerCase() === "operating-system";
+          if (aIsOs && !bIsOs) return -1;
+          if (bIsOs && !aIsOs) return 1;
+          const aCount = typeCountLookup.get(a.type.toLowerCase()) ?? 0;
+          const bCount = typeCountLookup.get(b.type.toLowerCase()) ?? 0;
+          if (bCount !== aCount) return bCount - aCount;
+          return a.name.localeCompare(b.name);
+        })
+        .slice(0, 8);
+    }
+    // Default: inventory prevalence (type frequency), then name
+    return aggregateList
+      .sort((a, b) => {
+        const aCount = typeCountLookup.get(a.type.toLowerCase()) ?? 0;
+        const bCount = typeCountLookup.get(b.type.toLowerCase()) ?? 0;
+        if (bCount !== aCount) return bCount - aCount;
+        if (b.count !== a.count) return b.count - a.count;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 8);
+  }, [licenseGapLookup, summary.components, summary.topComponents, typeCountLookup, typeLens]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Component inventory, base image details, and license coverage derived from the uploaded SBOM.
+        </p>
+        <InfoPopover title="SBOM insights" description={infoHelp.sbom.description} items={infoHelp.sbom.items} />
       </div>
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-5 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-        <p className="text-sm text-emerald-700 dark:text-emerald-200">Unique component types</p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueTypes}</p>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-5 dark:border-blue-500/30 dark:bg-blue-500/10">
+          <p className="text-sm text-blue-700 dark:text-blue-200">Total components</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.totalComponents}</p>
+        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-5 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+          <p className="text-sm text-emerald-700 dark:text-emerald-200">Unique component types</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueTypes}</p>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="text-sm text-amber-700 dark:text-amber-200">Referenced licenses</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueLicenses}</p>
+        </div>
       </div>
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 dark:border-amber-500/30 dark:bg-amber-500/10">
-        <p className="text-sm text-amber-700 dark:text-amber-200">Referenced licenses</p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{summary.uniqueLicenses}</p>
-      </div>
-    </div>
-    {summary.generator && (
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
-        <span className="font-semibold text-slate-700 dark:text-slate-200">Generated by:</span> {summary.generator}
-      </div>
-    )}
-    <div className="space-y-3">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Component types</h4>
-      <div className="flex flex-wrap gap-2">
-        {summary.typeBreakdown.length === 0 ? (
-          <span className="text-sm text-slate-500 dark:text-slate-400">No component type data available.</span>
-        ) : (
-          summary.typeBreakdown.map((item) => <TypeBadge key={item.label} label={item.label} count={item.count} />)
-        )}
-      </div>
-    </div>
-    <div className="space-y-3">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Highlighted components</h4>
-      {summary.topComponents.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">No component details recorded.</p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-            <thead className="bg-slate-100 dark:bg-slate-900/70">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Version</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
-              {summary.topComponents.map((component, index) => (
-                <tr key={`${component.name}-${component.version}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
-                  <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">{component.name}</td>
-                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{component.version}</td>
-                  <td className="px-4 py-3 text-sm uppercase text-slate-500 dark:text-slate-400">{component.type}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {summary.generator && (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+          <span className="font-semibold text-slate-700 dark:text-slate-200">Generated by:</span> {summary.generator}
         </div>
       )}
-    </div>
-    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-      <h4 className="text-sm font-semibold uppercase tracking-wide">Compliance alert</h4>
-      <p className="mt-2">
-        {summary.componentsWithoutLicense} components report no license metadata in the SBOM. Treat these as unknown obligations until they are manually reviewed.
-        {summary.totalComponents > 0 && (
-          <span> ({Math.round((summary.componentsWithoutLicense / summary.totalComponents) * 100)}% of listed components)</span>
-        )}
-      </p>
-    </div>
-    <div className="grid gap-4 md:grid-cols-2">
       <div className="space-y-3">
-        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Top licenses</h4>
-        {summary.topLicenses.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No license data recorded.</p>
-        ) : (
-          <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-            {summary.topLicenses.map((item) => (
-              <li key={item.name} className="flex items-center justify-between">
-                <span className="font-medium text-slate-900 dark:text-slate-100">{item.name}</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">{item.count}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Component types</h4>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: "inventory", label: "Inventory (count)" },
+                { id: "license", label: "License gaps" },
+                { id: "vuln", label: "Vulnerability risk" },
+                { id: "supplier", label: "Supplier trust" },
+                { id: "base", label: "Base/OS first" }
+              ].map((option) => {
+                const selected = option.id === typeLens;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setTypeLens(option.id as typeof typeLens)}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      selected
+                        ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-slate-900"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        <div className="flex flex-wrap gap-2">
+          {typeBreakdown.length === 0 ? (
+            <span className="text-sm text-slate-500 dark:text-slate-400">No component type data available.</span>
+          ) : (
+            typeBreakdown.map((item) => <TypeBadge key={item.label} label={item.label} count={item.count} />)
+          )}
+        </div>
       </div>
       <div className="space-y-3">
-        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package ecosystems</h4>
-        {summary.topEcosystems.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No package ecosystem data detected.</p>
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Highlighted components</h4>
+        {highlightedComponents.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No component details recorded.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {summary.topEcosystems.map((item) => (
-              <span key={item.name} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
-                <span className="uppercase tracking-wide text-slate-500 dark:text-slate-400">{item.name}</span>
-                <span>{item.count}</span>
-              </span>
-            ))}
+          <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+              <thead className="bg-slate-100 dark:bg-slate-900/70">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Version</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
+                {highlightedComponents.map((component, index) => (
+                  <tr key={`${component.name}-${component.version}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">{component.name}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{component.version}</td>
+                    <td className="px-4 py-3 text-sm uppercase text-slate-500 dark:text-slate-400">{component.type}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+        <h4 className="text-sm font-semibold uppercase tracking-wide">Compliance alert</h4>
+        <p className="mt-2">
+          {summary.componentsWithoutLicense} components report no license metadata in the SBOM. Treat these as unknown obligations until they are manually reviewed.
+          {summary.totalComponents > 0 && (
+            <span> ({Math.round((summary.componentsWithoutLicense / summary.totalComponents) * 100)}% of listed components)</span>
+          )}
+        </p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Top licenses</h4>
+          {summary.topLicenses.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No license data recorded.</p>
+          ) : (
+            <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+              {summary.topLicenses.map((item) => (
+                <li key={item.name} className="flex items-center justify-between">
+                  <span className="font-medium text-slate-900 dark:text-slate-100">{item.name}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">{item.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package ecosystems</h4>
+          {summary.topEcosystems.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No package ecosystem data detected.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {summary.topEcosystems.map((item) => (
+                <span key={item.name} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                  <span className="uppercase tracking-wide text-slate-500 dark:text-slate-400">{item.name}</span>
+                  <span>{item.count}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const TrivySummaryView = ({
   summary,
@@ -869,7 +1089,7 @@ export const RunPage = () => {
         ) : artifactError ? (
           <ErrorState message={artifactError} />
         ) : sbomSummary ? (
-          <SbomSummaryView summary={sbomSummary} />
+          <SbomSummaryView summary={sbomSummary} trivy={trivySummary} />
         ) : (
           <p className="text-sm text-slate-500 dark:text-slate-400">No SBOM artifact was uploaded for this run.</p>
         )}
@@ -924,6 +1144,7 @@ export const RunPage = () => {
             )
             : null
         }
+        defaultOpen={false}
       >
         {loadingArtifacts ? (
           <LoadingState message="Loading architecture notes" />
