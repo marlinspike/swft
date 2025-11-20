@@ -9,9 +9,9 @@ FROM python:3.11-slim-bookworm AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /srv/app
-COPY pyproject.toml README.md ./
+COPY backend/pyproject.toml backend/README.md ./
 COPY lookup ./lookup
-COPY app ./app
+COPY backend/app ./app
 # Create a dedicated virtualenv to carry into the runtime layer.
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip && \
@@ -44,7 +44,7 @@ RUN apt-get update \
 RUN groupadd --system swft && useradd --system --gid swft swft
 COPY --from=builder /opt/venv /opt/venv
 # Application files and lookup data.
-COPY app ./app
+COPY backend/app ./app
 COPY lookup ./lookup
 USER swft
 EXPOSE 8000
