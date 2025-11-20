@@ -1,0 +1,46 @@
+{
+  "catalog": {
+    "metadata": {
+      "title": "Sample Catalog",
+      "version": "1.0.0",
+      "oscal-version": "1.1.2"
+    },
+    "groups": [
+      {
+        "id": "ac",
+        "title": "Access Control",
+        "controls": [
+          {
+            "id": "AC-1",
+            "title": "Access Control Policy and Procedures",
+            "params": [
+              {
+                "id": "ac-1_prm_1",
+                "label": "AC-1 parameter",
+                "values": ["organization-defined personnel"]
+              }
+            ],
+            "parts": [
+              {
+                "name": "statement",
+                "prose": "The organization develops, documents, and disseminates...",
+                "props": []
+              },
+              {
+                "name": "assessment-objective",
+                "prose": "Determine if the organization develops and disseminates the access control policy."
+              }
+            ]
+          },
+          {
+            "id": "AC-2",
+            "title": "Account Management",
+            "params": [],
+            "parts": []
+          }
+        ]
+      }
+    ]
+  }
+}
+

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { fetchArtifact, fetchRunDetail } from "@lib/api";
 import type { AssistantFacet } from "@lib/types";
+import { SWFT_WORKSPACE_ENABLED } from "@lib/features";
 import { useApi } from "@hooks/useApi";
 import { LoadingState } from "@components/LoadingState";
 import { ErrorState } from "@components/ErrorState";
@@ -380,8 +381,8 @@ const SbomSummaryView = ({ summary }: { summary: SbomSummary }) => (
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
-              {summary.topComponents.map((component) => (
-                <tr key={`${component.name}-${component.version}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
+              {summary.topComponents.map((component, index) => (
+                <tr key={`${component.name}-${component.version}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
                   <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">{component.name}</td>
                   <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{component.version}</td>
                   <td className="px-4 py-3 text-sm uppercase text-slate-500 dark:text-slate-400">{component.type}</td>
@@ -793,14 +794,24 @@ export const RunPage = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Breadcrumbs items={[{ label: "Projects", to: "/" }, { label: projectId, to: `/projects/${projectId}` }, { label: `Run ${runId}` }]} />
-        <button
-          type="button"
-          onClick={() => openAssistant("run_manifest")}
-          className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
-        >
-          <SparklesIcon className="h-5 w-5" />
-          Ask Assistant
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {SWFT_WORKSPACE_ENABLED && (
+            <Link
+              to={`/swft/${encodeURIComponent(projectId)}?runId=${encodeURIComponent(runId)}`}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-white"
+            >
+              Open SWFT workspace
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => openAssistant("run_manifest")}
+            className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+          >
+            <SparklesIcon className="h-5 w-5" />
+            Ask Assistant
+          </button>
+        </div>
       </div>
       <CollapsibleSection
         title="Run overview"

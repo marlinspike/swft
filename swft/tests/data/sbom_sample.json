@@ -1,0 +1,29 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "name": "app",
+      "version": "1.0.0",
+      "purl": "pkg:pypi/app@1.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "lib",
+      "version": "2.4.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ]
+    }
+  ]
+}
+

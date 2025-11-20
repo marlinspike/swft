@@ -28,6 +28,7 @@ The workflow still produces hardened artifacts named `<project>-<run>-{sbom|triv
 - **Evidence store:** A single Azure Storage account (Standard tier is sufficient) with flat containers for SBOM, Trivy, run manifests, and `app-design.md`. Local filesystem mirrors keep developer environments inexpensive.
 - **Optional runtime:** Azure Container Instances, or any container host you pick, for showcasing the promoted workload.
 - **Implementation stack:** FastAPI + Python on the backend, React + Vite + Tailwind on the frontend, Nivo for visualization; modern, widely adopted OSS that is easy for teams to maintain or extend.
+- **Compliance database:** Azure Database for PostgreSQL (Flexible Server). The SWFT engine stores catalog pins, project boundaries, parameter values, policy telemetry, and evidence metadata there. Configure it via `SWFT_DB_*` environment variables; migrations are applied with `uv run swft store migrate`.
 
 ## Quick Start
 
@@ -38,17 +39,28 @@ The workflow still produces hardened artifacts named `<project>-<run>-{sbom|triv
 - Node.js 20+ and npm
 - Azure Storage account (or local artifacts extracted into a directory)
 
+### Python workspace (uv)
+
+This repo is managed as a uv workspace so the shared SWFT compliance package and backend install together.
+
+```bash
+# Install deps (creates .venv/ at the repo root)
+uv sync
+
+# Run CLI commands
+uv run swft config show
+
+# Start the backend API (from repo root)
+uv run -- python -m uvicorn app.main:app --reload --app-dir backend/app --port 8000
+```
+
+If you previously created `backend/.venv`, remove it to avoid accidentally running the API outside the workspace.
+
 ### Backend API (FastAPI)
 
 ```bash
-# Install deps
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-
-# Start API
-uvicorn app.main:app --reload --port 8000
+# assuming uv sync has already created .venv/
+uv run -- python -m uvicorn app.main:app --reload --app-dir backend/app --port 8000
 ```
 
 Copy `backend/.env.example` to `backend/.env` and fill in the values, or export them in your shell:
@@ -197,6 +209,133 @@ A Docker image for the demo can still be built with `docker build -t swft-demo s
 ## CI/CD Workflow Highlights
 
 Workflow file: `.github/workflows/deploy.yml`
+
+## Compliance Authoring Engine CLI (preview)
+
+This repo now ships a Typer-based CLI under the `swft` entrypoint. The CLI will ingest authoritative control catalogs, evidence, and Azure Policy snapshots in later steps; for now it provides configuration inspection plus the Azure Database for PostgreSQL migration runner.
+
+### Environment configuration
+
+1. Copy `.env.example` to `.env` (already gitignored).
+2. Provide the required Azure PostgreSQL details:
+   - `SWFT_DB_HOST`: fully qualified Flexible Server host (e.g., `swft-db.postgres.database.azure.com`)
+   - `SWFT_DB_NAME`: logical database containing the compliance schema
+   - `SWFT_DB_USER`: Microsoft Entra principal (preferred) or database login
+   - `SWFT_DB_AUTH`: `entra` for token auth or `password` for traditional credentials
+   - `SWFT_DB_PASSWORD`: only when `SWFT_DB_AUTH=password`
+   - Optional overrides: `SWFT_DB_AAD_SCOPE`, `SWFT_DB_PORT`, `SWFT_DB_TIMEOUT`
+3. (Optional) Set `SWFT_HOME`, `SWFT_STORE`, `SWFT_PINNED`, and `SWFT_OUTPUTS` to control where the CLI writes cache files; defaults live under `~/.swft/`.
+
+You can mirror the same values in `swft.toml` if you prefer checked-in, non-secret defaults. Environment variables and `.env` always take precedence.
+
+### First commands
+
+```bash
+# Show the resolved configuration (after filling .env)
+uv run swft config show
+
+# Apply or verify the database schema
+uv run swft store migrate
+
+# Confirm connectivity and review applied migrations
+uv run swft store doctor
+
+# Pin the NIST catalog + FedRAMP baseline
+uv run swft oscal sync-catalog \
+  --catalog /path/to/SP800-53-catalog.json \
+  --baseline /path/to/fedramp-high-profile.json \
+  --name fedramp-high
+
+# Or have the CLI download straight from NIST (no manual files required)
+# Run once per baseline you plan to support so every project can select it later.
+uv run swft oscal sync-nist-sp80053 --baseline low       --version v1.3.0 --format json
+uv run swft oscal sync-nist-sp80053 --baseline moderate  --version v1.3.0 --format json
+uv run swft oscal sync-nist-sp80053 --baseline high      --version v1.3.0 --format json
+uv run swft oscal sync-nist-sp80053 --baseline privacy   --version v1.3.0 --format json
+# (Repeat for other impact levels or updated versions as needed.)
+
+Each command downloads the SP 800-53 Rev5 catalog plus the selected baseline profile, pins the files, and imports them into PostgreSQL so the workspace/control-parameter UI can enumerate the controls for every project without manual uploads.
+
+Set `SWFT_OSCAL_BASE_URL` in `.env` if you mirror the NIST repo (the template must keep `{version}`, `{fmt}`, `{filename}` placeholders); the downloader will pull from your custom endpoint automatically.
+Similarly, `SWFT_AZURE_POLICY_BASE_URL` lets you pin Azure Policy definitions to a specific Git commit or a private mirror.
+
+# Define a project boundary
+uv run swft project init \
+  --name swft-demo \
+  --services "azure-container-instances, key-vault" \
+  --regions "usgov-virginia" \
+  --boundary-file docs/swft-boundary.md
+
+# Review and set a parameter value
+uv run swft control list-params --control AC-2 --project swft-demo
+uv run swft control set-param \
+  --project swft-demo \
+  --control AC-2 \
+  --param ac-2_prm_1 \
+  --value "every 30 days"
+
+# Attach pipeline evidence
+uv run swft evidence add sbom \
+  --project swft-demo \
+  --run-id github-run-123 \
+  --file evidence/sbom.cyclonedx.json
+
+uv run swft evidence add trivy \
+  --project swft-demo \
+  --run-id github-run-123 \
+  --file evidence/trivy.json \
+  --artifact my-image:latest
+
+uv run swft evidence add signature \
+  --project swft-demo \
+  --run-id github-run-123 \
+  --file evidence/cosign.json \
+  --digest sha256:d34db33f \
+  --verified true
+
+# Import Azure Policy mappings and telemetry
+uv run swft policy import \
+  --file downloads/nist-sp-800-53-r5-initiative.json \
+  --name nist-sp-800-53-r5 \
+  --scope gov
+
+uv run swft policy import-states \
+  --file snapshots/policy-states.json \
+  --initiative nist-sp-800-53-r5 \
+  --scope gov
+
+# Or pull Azure Policy set definitions straight from GitHub
+uv run swft policy import \
+  --file <(curl -s https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policySetDefinitions/Regulatory%20Compliance/NIST_SP_800-53_R5.json) \
+  --name nist-sp-800-53-r5 \
+  --scope gov
+```
+
+The CLI automatically creates local working directories and uses Azure AD token authentication when configured with `SWFT_DB_AUTH=entra`.
+
+`swft oscal sync-catalog` copies the supplied OSCAL catalog/profile into `~/.swft/pinned/`, records the hashes in the version registry, and normalizes control metadata inside the Azure Postgres store. Project, parameter, evidence, and `policy` commands persist their data in Azure Postgres so SSP/POA&M exports inherit consistent boundaries, telemetry, and artifact provenance. Azure Policy data is always tagged as **partial** evidence; you still need customer-side procedures to satisfy the control. Re-run the sync/import commands whenever NIST, FedRAMP, or Microsoft publish refreshed content.
+
+### Lookup data (Azure services + regions)
+
+The SWFT workspace enforces curated Azure vocabularies located under `lookup/`:
+
+- `lookup/azure_services.csv` – canonical Azure service names accepted in project boundaries (e.g., `App Service`, `Azure SQL Database`, `Azure Arc-enabled Kubernetes`). This list feeds the CLI, backend validation, and the UI’s typeahead control. Update it whenever Microsoft publishes new services.
+- `lookup/azure_regions.csv` – official Azure region names (including Gov/DoD). The project boundary UI exposes the same typeahead/tokens experience, and the backend only accepts regions present in this file.
+
+Both lookup files are copied into the backend container at build time. You can override them by setting `SWFT_AZURE_SERVICES_FILE` or `SWFT_AZURE_REGIONS_FILE` to alternate CSV paths.
+
+### SWFT Workspace (web UI)
+
+- Navigate to `/swft` from the portal header. The landing page lists every repo discovered via run manifests; the SWFT workspace URL is `/swft/<org>/<repo>` and shares the same project ID the dashboard already uses.
+- **Project Boundary**: The first card lets Dev teams create/update the project record that lives in Azure PostgreSQL:
+  - Select Azure services and regions via tokenized typeahead pickers (driven by the lookup CSVs). Only catalog-approved values are accepted and they sync 1:1 with backend validation.
+  - Provide the boundary narrative. Clicking **Create Project** (or **Update Boundary**) persists everything through `PUT /swft/<project>/project`.
+- **Authoritative inputs**: Upload OSCAL catalog/baseline files and Azure Policy initiatives/states directly in the browser. The backend writes them to the pinned directory, registers hashes in the version registry, and normalizes mappings.
+  - A built-in **Azure Policy catalog** card lets you select common regulatory initiatives (NIST, FedRAMP, ISO, etc.). The portal automatically fetches the JSON from Microsoft's GitHub repo (`SWFT_AZURE_POLICY_BASE_URL` controls the source) and ingests it—no manual download required. You can still upload custom initiatives and policy-state snapshots when needed.
+- **Evidence uploads**: Attach CycloneDX SBOMs, Trivy reports, and Cosign verification JSON to any run ID. Each upload writes the artifact metadata to Azure Postgres, linking it to the project and run.
+- **Control parameters**: Use the UI to inspect/set NIST control parameters, prompting Dev teams for values required to export an SSP. Every change keeps the implemented requirement scaffolding in sync.
+
+Authorizing Officials can view the same workspace to monitor progress, review telemetry, and trigger SSP/POA&M exports in future iterations—no CLI access required. All workspace actions hit the new `/api/swft/...` endpoints, which share the compliance engine with the CLI, so everything stays deterministic regardless of interface.
 
 On push to `main` or manual dispatch the pipeline:
 

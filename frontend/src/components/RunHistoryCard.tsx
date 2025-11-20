@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import { useNavigate } from "react-router-dom";
-import { ResponsiveLine, type Point, type SliceTooltipProps } from "@nivo/line";
+import { ResponsiveLine as NivoResponsiveLine, type Point, type PointSymbolProps, type SliceTooltipProps } from "@nivo/line";
 import { useTheme } from "@hooks/useTheme";
 import type { RunSummary } from "@lib/types";
 
@@ -62,6 +62,33 @@ const ARTIFACT_KEYS: Array<{ field: keyof RunSummary["artifact_counts"]; label: 
   { field: "sbom", label: "SBOM", color: "#38bdf8" },
   { field: "trivy", label: "Trivy report", color: "#14b8a6" }
 ];
+
+const CustomPoint = ({ size, color, borderWidth, borderColor }: PointSymbolProps) => (
+  <circle
+    r={size / 2}
+    fill={color ?? "#2563eb"}
+    stroke={borderColor ?? "#ffffff"}
+    strokeWidth={borderWidth ?? 2}
+  />
+);
+
+type SafeResponsiveLineProps = ComponentProps<typeof NivoResponsiveLine>;
+
+/**
+ * @nivo/line 0.85 marks several props as required via PropTypes but does not provide defaults
+ * when consuming the responsive wrapper. This shim injects the expected values so React dev
+ * builds stay quiet regardless of how the chart is rendered.
+ */
+const ResponsiveLine = (props: SafeResponsiveLineProps) => {
+  const {
+    defs = [],
+    fill = [],
+    enableCrosshair = true,
+    role = "img",
+    ...rest
+  } = props;
+  return <NivoResponsiveLine defs={defs} fill={fill} enableCrosshair={enableCrosshair} role={role} {...rest} />;
+};
 
 /**
  * Secure build insights rendered as multiple focused charts so Authorizing Officials can spot "authorization smells" instantly.
@@ -205,28 +232,32 @@ export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: R
 
   const windowLabel = effectiveCount < windowSize ? `${effectiveCount} of ${windowSize}` : `${effectiveCount}`;
 
-  const renderLineChart = (
-    series: LineSeries,
-    options?: {
-      yMin?: number;
-      yMax?: number | "auto";
-      axisLeftLabel?: string;
+const renderLineChart = (
+  series: LineSeries,
+  options?: {
+    yMin?: number;
+    yMax?: number | "auto";
+    axisLeftLabel?: string;
       axisLeftFormat?: (value: number) => string;
       tooltipFormatter?: (slice: SliceTooltipProps["slice"]) => JSX.Element;
     }
-  ) => (
+  ) => {
+    const palette = series.map((serie) => (typeof serie.color === "string" ? serie.color : "#2563eb"));
+    return (
     <ResponsiveLine
       data={series}
       margin={{ top: 20, right: 32, bottom: 48, left: 56 }}
       xScale={{ type: "point" }}
       yScale={{ type: "linear", min: options?.yMin ?? 0, max: options?.yMax ?? "auto", stacked: false }}
       theme={nivoTheme}
-      colors={(serie) => (typeof serie.color === "string" ? serie.color : undefined)}
+      colors={palette}
       lineWidth={3}
       enablePoints
+      pointColor={{ from: "color" }}
       pointSize={10}
       pointBorderWidth={2}
       pointBorderColor={isDark ? "#0f172a" : "#ffffff"}
+      pointSymbol={CustomPoint}
       enableSlices="x"
       sliceTooltip={({ slice }) =>
         options?.tooltipFormatter ? (
@@ -261,6 +292,7 @@ export const RunHistoryCard = ({ projectId, runs }: { projectId: string; runs: R
       animate
     />
   );
+  };
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-950/50">
