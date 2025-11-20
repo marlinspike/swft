@@ -8,9 +8,9 @@
 FROM python:3.11-slim-bookworm AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
-WORKDIR /srv/app
+# Build within the backend subdirectory to avoid setuptools picking up non-package folders.
+WORKDIR /srv/app/backend
 COPY backend/pyproject.toml backend/README.md ./
-COPY lookup ./lookup
 COPY backend/app ./app
 # Create a dedicated virtualenv to carry into the runtime layer.
 RUN python -m venv /opt/venv && \
