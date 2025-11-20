@@ -1,0 +1,38 @@
+{
+  "name": "NIST_SP_800_53_R5",
+  "properties": {
+    "displayName": "NIST SP 800-53 Rev5",
+    "metadata": {
+      "version": "1.0.0"
+    },
+    "policyDefinitions": [
+      {
+        "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/require-tags",
+        "policyDefinitionReferenceId": "Require_Tags",
+        "displayName": "Require resource tags",
+        "metadata": {
+          "category": "NIST SP 800-53 Rev5",
+          "compliance": {
+            "complianceControlIds": [
+              "AC-2",
+              "CM-2"
+            ]
+          }
+        }
+      },
+      {
+        "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/deny-public-storage",
+        "policyDefinitionReferenceId": "Deny_Public_Storage",
+        "metadata": {
+          "category": "NIST SP 800-53 Rev5",
+          "compliance": {
+            "complianceControlIds": [
+              "SC-7"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
+

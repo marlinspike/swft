@@ -118,3 +118,71 @@ export type AssistantStreamEvent =
       type: "error";
       error: string;
     };
+
+export interface SwftProject {
+  project_id: string;
+  services: string[];
+  regions: string[];
+  boundary_description: string | null;
+}
+
+export interface SwftProjectPayload {
+  services: string[];
+  regions: string[];
+  boundary_description?: string | null;
+}
+
+export interface SwftParameter {
+  control_id: string;
+  param_id: string;
+  label?: string | null;
+  description?: string | null;
+  allowed_values: string[];
+  current_value?: string | null;
+}
+
+export interface CatalogSyncResult {
+  catalog: Record<string, unknown>;
+  baseline: Record<string, unknown>;
+}
+
+export interface PolicyImportResult {
+  initiative: string;
+  scope: string;
+  policies: number;
+  mappings: number;
+  version: string;
+}
+
+export interface PolicyStateResult {
+  processed: number;
+  inserted: number;
+}
+
+export interface EvidenceResult {
+  evidence_id: number;
+  run_id: string;
+  kind: "sbom" | "trivy" | "signature";
+  metadata?: Record<string, unknown>;
+}
+
+export interface StorageEvidenceItem {
+  kind: string;
+  status: "stored" | "missing" | "failed";
+  message?: string | null;
+  evidence_id?: number | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StorageEvidenceResponse {
+  project_id: string;
+  run_id: string;
+  results: StorageEvidenceItem[];
+}
+
+export interface AzurePolicySet {
+  id: string;
+  label: string;
+  default_scope: string;
+  description: string;
+}

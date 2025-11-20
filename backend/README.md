@@ -23,6 +23,7 @@ Copy `.env.example` to `.env` and update the values, or export them directly in 
 - `AZURE_STORAGE_BLOB_PREFIX_DELIMITER` — delimiter between project and run identifiers (default `-`)
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` — optional service principal credentials; otherwise managed identity/CLI auth is used
 - `LOCAL_BLOB_ROOT` — optional filesystem path for offline development; when set the service reads blobs from disk instead of Azure
+- `SWFT_DB_HOST`, `SWFT_DB_NAME`, `SWFT_DB_USER`, `SWFT_DB_AUTH`, `SWFT_DB_PASSWORD` — required to enable the SWFT workspace endpoints; when missing, those routes return HTTP 503 with an explanatory error
 
 ## Testing
 

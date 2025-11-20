@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Final
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+
+def _load_env_files() -> None:
+    """Load environment variables from known repo locations regardless of CWD."""
+    backend_env = Path(__file__).resolve().parents[2] / ".env"
+    repo_root_env = Path(__file__).resolve().parents[3] / ".env"
+    for path in (backend_env, repo_root_env):
+        load_dotenv(path, override=False)
+    load_dotenv(override=False)
+
+
+_load_env_files()
 
 DEFAULT_SBOM_CONTAINER: Final[str] = "sboms"
 DEFAULT_SCAN_CONTAINER: Final[str] = "scans"

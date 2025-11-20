@@ -1,6 +1,7 @@
 
 
 # Custom
+.scratch/
 azure-credentials.json
 .note.md
 *.ignore

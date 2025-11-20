@@ -1,0 +1,17 @@
+[
+  {
+    "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/require-tags",
+    "policyAssignmentId": "/subscriptions/0000/providers/Microsoft.Authorization/policyAssignments/require-tags",
+    "resourceId": "/subscriptions/0000/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
+    "complianceState": "NonCompliant",
+    "timestamp": "2024-01-01T10:00:00Z"
+  },
+  {
+    "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/deny-public-storage",
+    "policyAssignmentId": "/subscriptions/0000/providers/Microsoft.Authorization/policyAssignments/deny-public-storage",
+    "resourceId": "/subscriptions/0000/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/blob1",
+    "complianceState": "Compliant",
+    "timestamp": "2024-01-02T12:30:00Z"
+  }
+]
+

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Dialog, Transition } from "@headlessui/react";
 import {
   ChatBubbleBottomCenterTextIcon,
+  ChevronDownIcon,
   DocumentTextIcon,
   FaceSmileIcon,
   RocketLaunchIcon,
@@ -224,6 +225,7 @@ export const AssistantPanel = ({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [configExpanded, setConfigExpanded] = useState(true);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const models = useMemo(() => config?.models ?? [], [config]);
@@ -440,6 +442,8 @@ export const AssistantPanel = ({
   };
 
   const activeFacet = facetDefinitions[facet];
+  const activeModelLabel = activeModel?.label ?? "Model";
+  const historyLabel = historyDepth === "all" ? "All" : historyDepth;
 
   return (
     <Transition.Root show={open} as={Fragment}>
@@ -496,127 +500,142 @@ export const AssistantPanel = ({
               </div>
 
               <div className="grid flex-1 grid-rows-[auto,1fr,auto] gap-4 overflow-hidden">
-                <section className="space-y-4 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                        Facet
+                <section className="border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Assistant configuration</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        {activeFacet.label} · {personaLabels[persona]} · {activeModelLabel} · History {historyLabel}
                       </p>
-                      <InfoPopover title="Facet context" description="Artifacts automatically loaded for each facet." items={facetHelpItems} />
+                      {!configExpanded && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{activeFacet.description}</p>
+                      )}
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {facets.map((facetKey) => {
-                        const definition = facetDefinitions[facetKey as AssistantFacet];
-                        const active = facetKey === facet;
-                        return (
-                          <button
-                            key={facetKey}
-                            type="button"
-                            onClick={() => {
-                              setFacet(facetKey as AssistantFacet);
-                              setSendError(null);
-                            }}
-                            className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition ${
-                              active
-                                ? "border-blue-500 bg-blue-500 text-white shadow"
-                                : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
-                            }`}
-                          >
-                            {definition.icon}
-                            <span>{definition.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{activeFacet.description}</p>
+                    <button
+                      type="button"
+                      aria-expanded={configExpanded}
+                      onClick={() => setConfigExpanded((prev) => !prev)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-white"
+                    >
+                      {configExpanded ? "Hide settings" : "Show settings"}
+                      <ChevronDownIcon className={`h-4 w-4 transition ${configExpanded ? "rotate-180" : "rotate-0"}`} />
+                    </button>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="col-span-1">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                        Persona
-                      </p>
-                      <div className="mt-2 grid gap-2">
-                        {personas.map((personaKey) => {
-                          const active = personaKey === persona;
-                          return (
-                            <button
-                              key={personaKey}
-                              type="button"
-                              onClick={() => setPersona(personaKey)}
-                              className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
-                                active
-                                  ? "border-blue-500 bg-blue-500 text-white shadow"
-                                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
-                              }`}
-                            >
-                              <span className="flex items-center gap-2">
-                                {personaIcons[personaKey]}
-                                {personaLabels[personaKey]}
-                              </span>
-                              {active && <FaceSmileIcon className="h-5 w-5" />}
-                            </button>
-                          );
-                        })}
+                  {configExpanded && (
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Facet</p>
+                          <InfoPopover title="Facet context" description="Artifacts automatically loaded for each facet." items={facetHelpItems} />
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {facets.map((facetKey) => {
+                            const definition = facetDefinitions[facetKey as AssistantFacet];
+                            const active = facetKey === facet;
+                            return (
+                              <button
+                                key={facetKey}
+                                type="button"
+                                onClick={() => {
+                                  setFacet(facetKey as AssistantFacet);
+                                  setSendError(null);
+                                }}
+                                className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition ${
+                                  active
+                                    ? "border-blue-500 bg-blue-500 text-white shadow"
+                                    : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
+                                }`}
+                              >
+                                {definition.icon}
+                                <span>{definition.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{activeFacet.description}</p>
                       </div>
-                    </div>
 
-                    <div className="col-span-1">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                        Model
-                      </p>
-                      <div className="mt-2 grid gap-2">
-                        {models.map((model) => {
-                          const active = model.key === modelKey;
-                          return (
-                            <button
-                              key={model.key}
-                              type="button"
-                              onClick={() => setModelKey(model.key)}
-                              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
-                                active
-                                  ? "border-blue-500 bg-blue-50 text-blue-700 shadow dark:bg-blue-500/20 dark:text-blue-100"
-                                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
-                              }`}
-                            >
-                              <p className="font-medium">{model.label}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {model.response_format === "json" ? "Structured JSON" : "Free-form"}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="col-span-1">
+                          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Persona</p>
+                          <div className="mt-2 grid gap-2">
+                            {personas.map((personaKey) => {
+                              const active = personaKey === persona;
+                              return (
+                                <button
+                                  key={personaKey}
+                                  type="button"
+                                  onClick={() => setPersona(personaKey)}
+                                  className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                    active
+                                      ? "border-blue-500 bg-blue-500 text-white shadow"
+                                    : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    {personaIcons[personaKey]}
+                                    {personaLabels[personaKey]}
+                                  </span>
+                                  {active && <FaceSmileIcon className="h-5 w-5" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
 
-                    <div className="col-span-1">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                        Context window
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {historyOptions.map((option) => {
-                          const active = option.value === historyDepth;
-                          return (
-                            <button
-                              key={option.label}
-                              type="button"
-                              onClick={() => setHistoryDepth(option.value)}
-                              className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                                active
-                                  ? "border-blue-500 bg-blue-500 text-white shadow"
-                                  : "border-slate-300 bg-white text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-500"
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
+                        <div className="col-span-1">
+                          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Model</p>
+                          <div className="mt-2 grid gap-2">
+                            {models.map((model) => {
+                              const active = model.key === modelKey;
+                              return (
+                                <button
+                                  key={model.key}
+                                  type="button"
+                                  onClick={() => setModelKey(model.key)}
+                                  className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                    active
+                                      ? "border-blue-500 bg-blue-50 text-blue-700 shadow dark:bg-blue-500/20 dark:text-blue-100"
+                                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500"
+                                  }`}
+                                >
+                                  <p className="font-medium">{model.label}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {model.response_format === "json" ? "Structured JSON" : "Free-form"}
+                                  </p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="col-span-1">
+                          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Context window</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {historyOptions.map((option) => {
+                              const active = option.value === historyDepth;
+                              return (
+                                <button
+                                  key={option.label}
+                                  type="button"
+                                  onClick={() => setHistoryDepth(option.value)}
+                                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                                    active
+                                      ? "border-blue-500 bg-blue-500 text-white shadow"
+                                      : "border-slate-300 bg-white text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-500"
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Choose how many previous messages the assistant should recall.</p>
+                        </div>
                       </div>
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Choose how many previous messages the assistant should recall.
-                      </p>
                     </div>
-                  </div>
+                  )}
                 </section>
 
                 <section className="flex-1 overflow-y-auto px-6 py-4">
