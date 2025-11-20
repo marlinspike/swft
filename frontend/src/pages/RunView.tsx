@@ -18,6 +18,7 @@ import remarkGfm from "remark-gfm";
 
 // Full run detail page: fetches the main run record, enriches it with SBOM/Trivy summaries,
 // and renders a stack of cards with provenance and security insights.
+
 type SbomSummary = {
   totalComponents: number;
   uniqueTypes: number;
