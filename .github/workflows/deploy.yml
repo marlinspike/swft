@@ -279,7 +279,7 @@ jobs:
           TRIVY_USERNAME: ${{ env.ACR_USERNAME }}
           TRIVY_PASSWORD: ${{ env.ACR_PASSWORD }}
         with:
-          version: 'latest'
+          version: 'v0.67.2'
           scan-type: 'image'
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'json'
@@ -316,7 +316,7 @@ jobs:
       - name: Generate Trivy SARIF
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          version: 'latest'
+          version: 'v0.67.2'
           scan-type: 'image'
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           format: 'sarif'
