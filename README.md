@@ -113,14 +113,16 @@ The responsive Nivo implementation honors the portal’s light/dark theme and gr
 
 | View | Description | Screenshot |
 |------|-------------|------------|
-| Projects | Numbered list of projects with sortable columns | ![Projects view](images/1_Projects.png) |
-| Runs | Workflow runs for a selected project | ![Project runs](images/10_Runs.png) |
-| Dashboard | Detailed run dashboard summarising metadata, SBOM, and Trivy results | ![Run dashboard](images/20_Dashboard.png) |
-| Raw JSON | Modal viewer for raw artifact payloads (run, SBOM, Trivy) | ![Raw JSON modal](images/21_Dashboard.png) |
-| Vulnerability Scan | Trivy severity summary and ranked findings | ![Trivy findings](images/30_Dashboard.png) |
-| Modal JSON Download | Raw JSON viewer with built-in download action | ![Raw JSON download](images/40_Popup.png) |
-| Authorization Signals | Multi-panel chart showing risk posture, SBOM, cosign, evidence completeness, and cadence | ![Authorization signal charts](images/50_Charts_Authorization_Signals.png) |
-| AI Assistant | Conversational view that injects run, SBOM, and Trivy evidence automatically | ![AI assistant chat](images/60_AI_Chat.png) |
+| Projects | Portfolio landing page with sortable projects and latest run timestamps | ![Projects view](images/1_Projects.png) |
+| Runs | Per-project run list with cosign status and Trivy totals/fail-set counts | ![Project runs](images/10_Runs.png) |
+| Run overview | Dark-mode run dashboard with provenance, GitHub context, image lineage, and artifact links | ![Run overview](images/20_Dashboard.png) |
+| SBOM lenses | Component inventory with type badges, dual lens controls (type-only vs. focus lenses), compliance alert, and license/ecosystem breakdowns | ![SBOM lenses](images/21_Dashboard.png.png) |
+| Trivy posture | Vulnerability summary with exploitability signals, aging/freshness, blast radius (packages/targets), and policy context | ![Trivy posture](images/30_Dashboard.png.png) |
+| Fix path | Ranked remediation list showing installed vs. fixed versions, affected findings, and highest severity per package | ![Fix path](images/31_Dashboard.png.png) |
+| Top findings | Expanded findings table with scanner metadata and policy context callouts | ![Top findings](images/32_dashboard.png.png) |
+| Raw JSON | Full-screen modal for run.json with inline download and citations for SBOM/Trivy artifacts | ![Raw JSON modal](images/40_Popup.png) |
+| Authorization Signals | Trend board covering vulnerability posture, SBOM surface area, signature health, evidence completeness, and delivery cadence | ![Authorization signal charts](images/50_Charts_Authorization_Signals.png) |
+| AI Assistant | Multi-persona assistant with facet-aware context windows, model picker, and quick-start prompts | ![AI assistant chat](images/60_AI_Chat.png) |
 
 ---
 
