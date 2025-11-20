@@ -976,6 +976,9 @@ const TrivySummaryView = ({
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
           <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Blast radius</h4>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Counts show findings affecting that package or target (overlaps; all severities).
+          </p>
           {topPackages.length === 0 && topTargets.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No package or target concentration detected.</p>
           ) : (
@@ -992,7 +995,7 @@ const TrivySummaryView = ({
                         {pkg.name}
                       </span>
                       <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
-                        {pkg.total} findings
+                        {pkg.total} affecting
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
@@ -1014,7 +1017,7 @@ const TrivySummaryView = ({
                         {target.name}
                       </span>
                       <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
-                        {target.total} findings
+                        {target.total} affecting
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
