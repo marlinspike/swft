@@ -41,6 +41,8 @@ type TrivyFinding = {
   installedVersion: string;
   fixedVersion: string;
   target: string;
+  publishedDate?: string | null;
+  cvssScore?: number | null;
 };
 
 type TrivySummary = {
@@ -53,6 +55,27 @@ type TrivySummary = {
     fixableCount: number;
     total: number;
   }[];
+  topTargets: {
+    name: string;
+    highestSeverity: string | null;
+    total: number;
+  }[];
+  fixRecommendations: {
+    packageName: string;
+    installedVersion: string;
+    fixedVersion: string;
+    occurrences: number;
+    highestSeverity: string | null;
+  }[];
+  cvssStats: {
+    maxScore: number | null;
+    averageScore: number | null;
+    scoredFindings: number;
+  };
+  publishWindow: {
+    newest: string | null;
+    oldest: string | null;
+  };
   platform: {
     osFamily: string | null;
     osName: string | null;
@@ -233,6 +256,8 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
   const results = Array.isArray(payload.Results) ? payload.Results : [];
   const severityCounts = new Map<string, number>();
   const findings: TrivyFinding[] = [];
+  const targetAggregates = new Map<string, { name: string; highestSeverity: string | null; total: number }>();
+  const fixRecommendations = new Map<string, { packageName: string; installedVersion: string; fixedVersion: string; occurrences: number; highestSeverity: string | null }>();
   const metadata = typeof payload.Metadata === "object" && payload.Metadata !== null ? (payload.Metadata as Record<string, unknown>) : null;
   const osInfo = metadata && typeof metadata.OS === "object" && metadata.OS !== null ? (metadata.OS as Record<string, unknown>) : null;
   const osFamily = osInfo && typeof osInfo.Family === "string" ? osInfo.Family : null;
@@ -249,6 +274,8 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
   let fixableCount = 0;
   let withoutFixCount = 0;
   let latestPublished: string | null = null;
+  let oldestPublished: string | null = null;
+  const cvssScores: number[] = [];
   for (const entry of results) {
     if (typeof entry !== "object" || entry === null) continue;
     const result = entry as Record<string, unknown>;
@@ -270,7 +297,8 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
         highestSeverity = severity;
       }
       const fixedVersion = typeof vuln.FixedVersion === "string" ? vuln.FixedVersion : "";
-      if (fixedVersion && fixedVersion !== "0" && fixedVersion !== "-" && fixedVersion !== "—" && fixedVersion.toLowerCase() !== "none") {
+      const hasFix = fixedVersion && fixedVersion !== "0" && fixedVersion !== "-" && fixedVersion !== "—" && fixedVersion.toLowerCase() !== "none";
+      if (hasFix) {
         fixableCount += 1;
       } else {
         withoutFixCount += 1;
@@ -282,6 +310,29 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
         } else if (new Date(published).getTime() > new Date(latestPublished).getTime()) {
           latestPublished = published;
         }
+        if (!oldestPublished) {
+          oldestPublished = published;
+        } else if (new Date(published).getTime() < new Date(oldestPublished).getTime()) {
+          oldestPublished = published;
+        }
+      }
+      let vulnCvssScore: number | null = null;
+      const cvssField = typeof vuln.CVSS === "object" && vuln.CVSS !== null ? (vuln.CVSS as Record<string, unknown>) : null;
+      if (cvssField) {
+        for (const entryPoint of Object.values(cvssField)) {
+          if (!entryPoint || typeof entryPoint !== "object") continue;
+          const cvss = entryPoint as Record<string, unknown>;
+          const score =
+            typeof cvss.V31Score === "number"
+              ? cvss.V31Score
+              : typeof cvss.V3Score === "number"
+                ? cvss.V3Score
+                : null;
+          if (typeof score === "number" && Number.isFinite(score)) {
+            cvssScores.push(score);
+            vulnCvssScore = vulnCvssScore === null ? score : Math.max(vulnCvssScore, score);
+          }
+        }
       }
       findings.push({
         id: typeof vuln.VulnerabilityID === "string" ? vuln.VulnerabilityID : "N/A",
@@ -290,27 +341,68 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
         packageName: typeof vuln.PkgName === "string" ? vuln.PkgName : "unknown",
         installedVersion: typeof vuln.InstalledVersion === "string" ? vuln.InstalledVersion : "unknown",
         fixedVersion: typeof vuln.FixedVersion === "string" && vuln.FixedVersion.length > 0 ? vuln.FixedVersion : "—",
-        target
+        target,
+        publishedDate: published,
+        cvssScore: vulnCvssScore
       });
+      const targetKey = target.toLowerCase();
+      const targetExisting = targetAggregates.get(targetKey);
+      if (!targetExisting) {
+        targetAggregates.set(targetKey, { name: target, highestSeverity: severity, total: 1 });
+      } else {
+        targetExisting.total += 1;
+        const currentTargetRank = targetExisting.highestSeverity ? severityOrder.indexOf(targetExisting.highestSeverity) : severityOrder.length;
+        if (severityIndex !== -1 && (currentTargetRank === -1 || severityIndex < currentTargetRank)) {
+          targetExisting.highestSeverity = severity;
+        }
+      }
+      if (fixedVersion && fixedVersion !== "—") {
+        const key = typeof vuln.PkgName === "string" ? vuln.PkgName.toLowerCase() : null;
+        if (key && hasFix) {
+          const existingFix = fixRecommendations.get(key);
+          const installed = typeof vuln.InstalledVersion === "string" ? vuln.InstalledVersion : "unknown";
+          if (!existingFix) {
+            fixRecommendations.set(key, {
+              packageName: typeof vuln.PkgName === "string" ? vuln.PkgName : "unknown",
+              installedVersion: installed,
+              fixedVersion,
+              occurrences: 1,
+              highestSeverity: severity
+            });
+          } else {
+            existingFix.occurrences += 1;
+            const currentFixRank = existingFix.highestSeverity ? severityOrder.indexOf(existingFix.highestSeverity) : severityOrder.length;
+            if (severityIndex !== -1 && (currentFixRank === -1 || severityIndex < currentFixRank)) {
+              existingFix.highestSeverity = severity;
+            }
+            if (existingFix.fixedVersion === "—" && fixedVersion !== "—") {
+              existingFix.fixedVersion = fixedVersion;
+            }
+          }
+        }
+      }
     }
   }
   const sortedSeverity = severityOrder
     .map((severity) => ({ severity, count: severityCounts.get(severity) ?? 0 }))
     .filter((entry) => entry.count > 0);
-  const rankedFindings = findings
-    .sort((a, b) => {
-      const aRank = severityOrder.indexOf(a.severity);
-      const bRank = severityOrder.indexOf(b.severity);
-      if (aRank === bRank) return a.id.localeCompare(b.id);
-      return aRank - bRank;
-    })
-    .slice(0, 10);
+  const criticalAndHighFindings = findings.filter(
+    (finding) => finding.severity === "CRITICAL" || finding.severity === "HIGH"
+  );
+  const prioritizedFindingsSource = criticalAndHighFindings.length > 0 ? criticalAndHighFindings : findings;
+  const prioritizedFindings = [...prioritizedFindingsSource].sort((a, b) => {
+    const aRank = severityOrder.indexOf(a.severity);
+    const bRank = severityOrder.indexOf(b.severity);
+    if (aRank === bRank) return a.id.localeCompare(b.id);
+    return aRank - bRank;
+  });
 
   const packageAggregates = new Map<string, { name: string; highestSeverity: string | null; fixableCount: number; total: number }>();
+  const rankSeverity = (value: string | null) => (value ? severityOrder.indexOf(value) : severityOrder.length);
   for (const finding of findings) {
     const key = finding.packageName.toLowerCase();
     const current = packageAggregates.get(key);
-    const severityRank = severityOrder.indexOf(finding.severity);
+    const severityRankValue = severityOrder.indexOf(finding.severity);
     if (!current) {
       packageAggregates.set(key, {
         name: finding.packageName,
@@ -322,17 +414,49 @@ const buildTrivySummary = (payload: Record<string, unknown>): TrivySummary => {
       current.total += 1;
       if (finding.fixedVersion && finding.fixedVersion !== "—") current.fixableCount += 1;
       const currentRank = current.highestSeverity ? severityOrder.indexOf(current.highestSeverity) : severityOrder.length;
-      if (severityRank !== -1 && (currentRank === -1 || severityRank < currentRank)) {
+      if (severityRankValue !== -1 && (currentRank === -1 || severityRankValue < currentRank)) {
         current.highestSeverity = finding.severity;
       }
     }
   }
+  const sortedPackages = Array.from(packageAggregates.values()).sort((a, b) => {
+    const leftRank = rankSeverity(a.highestSeverity);
+    const rightRank = rankSeverity(b.highestSeverity);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return b.total - a.total;
+  });
+  const sortedTargets = Array.from(targetAggregates.values()).sort((a, b) => {
+    const leftRank = rankSeverity(a.highestSeverity);
+    const rightRank = rankSeverity(b.highestSeverity);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return b.total - a.total;
+  });
+  const sortedFixRecommendations = Array.from(fixRecommendations.values()).sort((a, b) => {
+    const leftRank = rankSeverity(a.highestSeverity);
+    const rightRank = rankSeverity(b.highestSeverity);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return b.occurrences - a.occurrences;
+  });
+  const maxCvss = cvssScores.length > 0 ? Math.max(...cvssScores) : null;
+  const averageCvss =
+    cvssScores.length > 0 ? Math.round((cvssScores.reduce((sum, value) => sum + value, 0) / cvssScores.length) * 10) / 10 : null;
 
   return {
     totalFindings: findings.length,
     severityCounts: sortedSeverity,
-    topFindings: rankedFindings,
-    packageFindings: Array.from(packageAggregates.values()),
+    topFindings: prioritizedFindings,
+    packageFindings: sortedPackages,
+    topTargets: sortedTargets,
+    fixRecommendations: sortedFixRecommendations,
+    cvssStats: {
+      maxScore: maxCvss,
+      averageScore: averageCvss,
+      scoredFindings: cvssScores.length
+    },
+    publishWindow: {
+      newest: latestPublished,
+      oldest: oldestPublished
+    },
     platform: {
       osFamily,
       osName,
@@ -377,7 +501,43 @@ const TypeBadge = ({ label, count }: { label: string; count: number }) => (
 );
 
 const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: TrivySummary | null }) => {
-  const [typeLens, setTypeLens] = useState<"inventory" | "license" | "base" | "vuln" | "supplier">("inventory");
+  type LensMode = "inventory" | "license" | "base" | "vuln" | "supplier";
+  const [typeLens, setTypeLens] = useState<LensMode>("inventory");
+  const lensLabels: Record<LensMode, string> = {
+    inventory: "Inventory (count)",
+    license: "License gaps",
+    vuln: "Vulnerability risk",
+    supplier: "Supplier trust",
+    base: "Base/OS first"
+  };
+  const focusLensIds = new Set<LensMode>(["license", "vuln", "supplier"]);
+  const focusLensOptions = [
+    { id: "license" as const, label: lensLabels.license },
+    { id: "vuln" as const, label: lensLabels.vuln },
+    { id: "supplier" as const, label: lensLabels.supplier }
+  ];
+  const typeOnlyLensOptions = [
+    { id: "inventory" as const, label: lensLabels.inventory },
+    { id: "base" as const, label: lensLabels.base }
+  ];
+  const highlightLens: LensMode = focusLensIds.has(typeLens) ? typeLens : "inventory";
+  const renderLensButton = (option: { id: LensMode; label: string }) => {
+    const selected = option.id === typeLens;
+    return (
+      <button
+        key={option.id}
+        type="button"
+        onClick={() => setTypeLens(option.id)}
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+          selected
+            ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-slate-900"
+            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+        }`}
+      >
+        {option.label}
+      </button>
+    );
+  };
   const typeCountLookup = useMemo(() => {
     const map = new Map<string, number>();
     for (const entry of summary.typeBreakdown) {
@@ -446,7 +606,7 @@ const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: Tri
       }
     }
     const aggregateList = Array.from(aggregated.values());
-    if (typeLens === "license") {
+    if (highlightLens === "license") {
       return aggregateList
         .sort((a, b) => {
           if (a.missingLicense && !b.missingLicense) return -1;
@@ -459,7 +619,7 @@ const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: Tri
         })
         .slice(0, 8);
     }
-    if (typeLens === "vuln") {
+    if (highlightLens === "vuln") {
       const severityRank = (severity: string | null) => {
         const idx = severity ? severityOrder.indexOf(severity) : -1;
         return idx === -1 ? severityOrder.length : idx;
@@ -481,7 +641,7 @@ const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: Tri
         })
         .slice(0, 8);
     }
-    if (typeLens === "supplier") {
+    if (highlightLens === "supplier") {
       return aggregateList
         .sort((a, b) => {
           const aMissing = !a.supplier || `${a.supplier}`.trim().length === 0;
@@ -519,7 +679,7 @@ const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: Tri
         return a.name.localeCompare(b.name);
       })
       .slice(0, 8);
-  }, [licenseGapLookup, summary.components, summary.topComponents, typeCountLookup, typeLens]);
+  }, [highlightLens, licenseGapLookup, summary.components, summary.topComponents, typeCountLookup, typeLens]);
 
   return (
     <div className="space-y-6">
@@ -551,32 +711,21 @@ const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: Tri
       <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Component types</h4>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "inventory", label: "Inventory (count)" },
-                { id: "license", label: "License gaps" },
-                { id: "vuln", label: "Vulnerability risk" },
-                { id: "supplier", label: "Supplier trust" },
-                { id: "base", label: "Base/OS first" }
-              ].map((option) => {
-                const selected = option.id === typeLens;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setTypeLens(option.id as typeof typeLens)}
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                      selected
-                        ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-slate-900"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type lenses</span>
+              <div className="flex flex-wrap gap-2">
+                {typeOnlyLensOptions.map((option) => renderLensButton(option))}
+              </div>
+              {focusLensIds.has(typeLens) && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                  Focus lens: {lensLabels[typeLens]} (affects both sections)
+                </span>
+              )}
             </div>
           </div>
+          {!focusLensIds.has(typeLens) && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">Need deeper context? Use the focus lenses next to the highlighted table to reshape both views.</p>
+          )}
         <div className="flex flex-wrap gap-2">
           {typeBreakdown.length === 0 ? (
             <span className="text-sm text-slate-500 dark:text-slate-400">No component type data available.</span>
@@ -586,7 +735,15 @@ const SbomSummaryView = ({ summary, trivy }: { summary: SbomSummary; trivy?: Tri
         </div>
       </div>
       <div className="space-y-3">
-        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Highlighted components</h4>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Highlighted components</h4>
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Focus lenses (types + highlighted table)</span>
+            <div className="flex flex-wrap gap-2">
+              {focusLensOptions.map((option) => renderLensButton(option))}
+            </div>
+          </div>
+        </div>
         {highlightedComponents.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">No component details recorded.</p>
         ) : (
@@ -694,6 +851,21 @@ const TrivySummaryView = ({
     : "—";
   const scannerVersion = summary.scanner.version ?? policy?.scannerVersion ?? null;
   const scannerDbUpdatedAt = summary.scanner.dbUpdatedAt ?? policy?.scannerDbUpdatedAt ?? null;
+  const formatAge = (value: string | null) => {
+    if (!value) return "—";
+    const timestamp = new Date(value).getTime();
+    if (Number.isNaN(timestamp)) return "—";
+    const days = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60 * 24));
+    if (days <= 0) return "Today";
+    if (days === 1) return "1 day ago";
+    if (days < 60) return `${days} days ago`;
+    const months = Math.floor(days / 30);
+    return months === 1 ? "1 month ago" : `${months} months ago`;
+  };
+  const formatCvss = (value: number | null) => (value === null ? "Not provided" : value.toFixed(1));
+  const topPackages = summary.packageFindings.slice(0, 3);
+  const topTargets = summary.topTargets.slice(0, 3);
+  const fixPaths = summary.fixRecommendations.slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -752,42 +924,183 @@ const TrivySummaryView = ({
           )}
         </div>
       </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Exploitability signals</h4>
+          <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex items-center justify-between">
+              <dt>Highest CVSS (any source)</dt>
+              <dd className="text-right text-slate-900 dark:text-slate-100">{formatCvss(summary.cvssStats.maxScore)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Average CVSS</dt>
+              <dd className="text-right text-slate-900 dark:text-slate-100">
+                {formatCvss(summary.cvssStats.averageScore)}
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">({summary.cvssStats.scoredFindings} scored)</span>
+              </dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Highest severity</dt>
+              <dd className="text-right">
+                <SeverityBadge severity={summary.highestSeverity ?? "UNKNOWN"} />
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Aging & freshness</h4>
+          <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex items-center justify-between">
+              <dt>Newest disclosure</dt>
+              <dd className="text-right">
+                <div className="text-slate-900 dark:text-slate-100">{formatDateTime(summary.publishWindow.newest)}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{formatAge(summary.publishWindow.newest)}</div>
+              </dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Oldest disclosure</dt>
+              <dd className="text-right">
+                <div className="text-slate-900 dark:text-slate-100">{formatDateTime(summary.publishWindow.oldest)}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{formatAge(summary.publishWindow.oldest)}</div>
+              </dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt>Age spread</dt>
+              <dd className="text-right text-slate-900 dark:text-slate-100">
+                {summary.publishWindow.newest && summary.publishWindow.oldest
+                  ? `${formatAge(summary.publishWindow.oldest)} → ${formatAge(summary.publishWindow.newest)}`
+                  : "—"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Blast radius</h4>
+          {topPackages.length === 0 && topTargets.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No package or target concentration detected.</p>
+          ) : (
+            <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Packages</p>
+                {topPackages.map((pkg) => (
+                  <div key={pkg.name} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/40">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <span
+                        title={pkg.name}
+                        className="block min-w-0 break-words text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100"
+                      >
+                        {pkg.name}
+                      </span>
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                        {pkg.total} findings
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+                      <span>Highest severity</span>
+                      <SeverityBadge severity={pkg.highestSeverity ?? "UNKNOWN"} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Targets</p>
+                {topTargets.map((target) => (
+                  <div key={target.name} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/40">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <span
+                        title={target.name}
+                        className="block min-w-0 break-words text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100"
+                      >
+                        {target.name}
+                      </span>
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                        {target.total} findings
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+                      <span>Highest severity</span>
+                      <SeverityBadge severity={target.highestSeverity ?? "UNKNOWN"} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/60">
+        <div className="flex items-start justify-between gap-3">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Fix path</h4>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {summary.fixRecommendations.length} package{summary.fixRecommendations.length === 1 ? "" : "s"} with a published fix
+          </span>
+        </div>
+        {fixPaths.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No fixes surfaced in this scan.</p>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {fixPaths.map((fix) => (
+              <li key={`${fix.packageName}-${fix.fixedVersion}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/40">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{fix.packageName}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Installed {fix.installedVersion}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Upgrade to</p>
+                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-200">{fix.fixedVersion}</p>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+                  <span>{fix.occurrences} finding{fix.occurrences === 1 ? "" : "s"} affected</span>
+                  <div className="flex items-center gap-2">
+                    <span>Highest severity</span>
+                    <SeverityBadge severity={fix.highestSeverity ?? "UNKNOWN"} />
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div className="space-y-3">
         <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Top findings</h4>
         {summary.topFindings.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">No vulnerabilities reported in the selected severities.</p>
         ) : (
           <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-              <thead className="bg-slate-100 dark:bg-slate-900/70">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Severity</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Vulnerability</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Fixed version</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Target</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
-                {summary.topFindings.map((finding) => (
-                  <tr key={`${finding.id}-${finding.packageName}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
-                    <td className="px-4 py-3 text-sm font-semibold uppercase text-slate-900 dark:text-slate-100">
-                      <SeverityBadge severity={finding.severity} />
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">
-                      <p className="font-medium">{finding.id}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{finding.title}</p>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                      <p className="font-medium text-slate-900 dark:text-slate-100">{finding.packageName}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">Installed: {finding.installedVersion}</p>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">{finding.fixedVersion}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{finding.target}</td>
+            <div className="max-h-96 overflow-y-auto">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+                <thead className="bg-slate-100 dark:bg-slate-900/70">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Severity</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Vulnerability</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Package</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Fixed version</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Target</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-900 dark:bg-slate-950/40">
+                  {summary.topFindings.map((finding) => (
+                    <tr key={`${finding.id}-${finding.packageName}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/60">
+                      <td className="px-4 py-3 text-sm font-semibold uppercase text-slate-900 dark:text-slate-100">
+                        <SeverityBadge severity={finding.severity} />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">
+                        <p className="font-medium">{finding.id}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{finding.title}</p>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+                        <p className="font-medium text-slate-900 dark:text-slate-100">{finding.packageName}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500">Installed: {finding.installedVersion}</p>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">{finding.fixedVersion}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{finding.target}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
