@@ -340,25 +340,25 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.9.0
 
-      - name: Sign image (keyless)
-        env:
-          COSIGN_EXPERIMENTAL: 1  # Enable keyless signing
+      - name: Decode Cosign keys
         run: |
-          set +e
-          REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
-          echo "🔑 Attempting to sign image using keyless mode: $REF"
-          
-          # Sign using keyless mode (will open browser for OIDC auth)
-          if cosign sign "$REF"; then
-              echo "✅ Image signed successfully using keyless mode"
-          else
-              SIGN_STATUS=$?
-              echo "⚠️  Warning: Failed to sign image (exit code $SIGN_STATUS)"
-              # Continue workflow even if signing fails
-              exit 0
-          fi
+          set -euo pipefail
+          echo "${{ secrets.COSIGN_KEY_B64 }}" | base64 -d > cosign.key
+          echo "${{ secrets.COSIGN_PUB_KEY_B64 }}" | base64 -d > cosign.pub
+          chmod 600 cosign.key
+          chmod 644 cosign.pub
 
-      - name: Verify image signature (keyless)
+
+      - name: Sign image (keyed)
+        run: |
+          set -euo pipefail
+          REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          echo "🔑 Signing image with cosign key: $REF"
+          cosign sign --key cosign.key "$REF"
+          echo "COSIGN_VERIFY_STATUS=signed" >> $GITHUB_ENV
+
+
+      - name: Verify image signature (keyed)
         run: |
           set +e
           REF="${ACR_LOGIN_SERVER}/${IMAGE_NAME}@${IMAGE_DIGEST}"
@@ -380,11 +380,24 @@ jobs:
           format:       cyclonedx-json
           output-file:  sbom.cyclonedx.json
           upload-artifact: false
+      
 
       - name: Verify SBOM exists
         run: |
           set -euo pipefail
           test -s "sbom.cyclonedx.json" || { echo "SBOM not created"; ls -la; exit 2; }
+
+      - name: Cosign sign SBOM (sbom.cyclonedx.json)
+        if: hashFiles('sbom.cyclonedx.json') != ''
+        run: |
+          set -euo pipefail
+          ARTIFACT="sbom.cyclonedx.json"
+          cosign sign-blob \
+            --key cosign.key \
+            --output-signature "${ARTIFACT}.sig" \
+            "${ARTIFACT}"
+          ls -l "${ARTIFACT}.sig"
+
 
       - name: Run Trivy vulnerability scanner (JSON)
         uses: aquasecurity/trivy-action@0.33.1
@@ -407,6 +420,17 @@ jobs:
           set -euo pipefail
           test -s "trivy-report.json" || { echo "Trivy JSON not created"; ls -la; exit 2; }
 
+      - name: Cosign sign Trivy JSON (trivy-report.json)
+        if: hashFiles('trivy-report.json') != ''
+        run: |
+          set -euo pipefail
+          ARTIFACT="trivy-report.json"
+          cosign sign-blob \
+            --key cosign.key \
+            --output-signature "${ARTIFACT}.sig" \
+            "${ARTIFACT}"
+          ls -l "${ARTIFACT}.sig"
+
       - name: Generate Trivy SARIF
         uses: aquasecurity/trivy-action@0.33.1
         with:
@@ -424,6 +448,17 @@ jobs:
         run: |
           set -euo pipefail
           test -s "trivy-results.sarif" || { echo "Trivy SARIF not created"; ls -la; exit 2; }
+      
+      - name: Cosign sign Trivy SARIF (trivy-results.sarif)
+        if: hashFiles('trivy-results.sarif') != ''
+        run: |
+          set -euo pipefail
+          ARTIFACT="trivy-results.sarif"
+          cosign sign-blob \
+            --key cosign.key \
+            --output-signature "${ARTIFACT}.sig" \
+            "${ARTIFACT}"
+          ls -l "${ARTIFACT}.sig"
 
       - name: Ensure jq present (for policy)
         run: jq --version || (sudo apt-get update -y && sudo apt-get install -y jq)
