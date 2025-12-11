@@ -18,9 +18,12 @@ import type {
   AzurePolicySet,
 } from "@lib/types";
 
+// Build a fully qualified API URL using the configured base.
 const apiUrl = (path: string) => `${import.meta.env.VITE_API_BASE_URL ?? "/api"}${path}`;
+// Encode project IDs safely for URL paths.
 const encodeProject = (projectId: string) => encodeURIComponent(projectId);
 
+// Helper: unwrap JSON or raise a useful error message so callers stay simple.
 async function handle<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const message = await response.text();
@@ -29,11 +32,17 @@ async function handle<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+// List every project the backend knows about.
 export const fetchProjects = async (): Promise<ProjectSummary[]> => handle<ProjectSummary[]>(await fetch(apiUrl("/projects")));
+// List runs for a project.
 export const fetchRuns = async (projectId: string): Promise<RunSummary[]> => handle<RunSummary[]>(await fetch(apiUrl(`/projects/${projectId}/runs`)));
+// Fetch run detail with metadata and artifact descriptors.
 export const fetchRunDetail = async (projectId: string, runId: string): Promise<RunDetail> => handle<RunDetail>(await fetch(apiUrl(`/projects/${projectId}/runs/${runId}`)));
+// Fetch raw artifact payload (SBOM/Trivy/run/appdesign).
 export const fetchArtifact = async (projectId: string, runId: string, artifactType: ArtifactType): Promise<unknown> => handle<unknown>(await fetch(apiUrl(`/projects/${projectId}/runs/${runId}/artifacts/${artifactType}`)));
+// Assistant model/persona/facet configuration.
 export const fetchAssistantConfig = async (): Promise<AssistantConfig> => handle<AssistantConfig>(await fetch(apiUrl("/assistant/config")));
+// Send a non-streaming assistant message.
 export const postAssistantMessage = async (payload: AssistantRequest): Promise<AssistantResponse> =>
   handle<AssistantResponse>(
     await fetch(apiUrl("/assistant/chat"), {
@@ -43,10 +52,12 @@ export const postAssistantMessage = async (payload: AssistantRequest): Promise<A
     })
   );
 
+// Stream an assistant message and forward each NDJSON event to a callback.
 export const streamAssistantMessage = async (
   payload: AssistantRequest,
   onEvent: (event: AssistantStreamEvent) => void
 ): Promise<void> => {
+  // Stream NDJSON tokens from the backend so the UI can render incremental replies.
   const response = await fetch(apiUrl("/assistant/chat/stream"), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
@@ -83,9 +94,11 @@ export const streamAssistantMessage = async (
   }
 };
 
+// Load a SWFT project boundary record.
 export const fetchSwftProject = async (projectId: string): Promise<SwftProject> =>
   handle<SwftProject>(await fetch(apiUrl(`/swft/${encodeProject(projectId)}/project`)));
 
+// Create or update a SWFT project boundary.
 export const upsertSwftProject = async (projectId: string, payload: SwftProjectPayload): Promise<SwftProject> =>
   handle<SwftProject>(
     await fetch(apiUrl(`/swft/${encodeProject(projectId)}/project`), {
@@ -95,9 +108,11 @@ export const upsertSwftProject = async (projectId: string, payload: SwftProjectP
     })
   );
 
+// Fetch NIST control parameters for a project/control.
 export const fetchSwftParameters = async (projectId: string, controlId: string): Promise<SwftParameter[]> =>
   handle<SwftParameter[]>(await fetch(apiUrl(`/swft/${encodeProject(projectId)}/controls/${encodeURIComponent(controlId)}/parameters`)));
 
+// Persist a single parameter value.
 export const setSwftParameter = async (projectId: string, controlId: string, paramId: string, value: string): Promise<void> => {
   await handle(
     await fetch(
@@ -118,6 +133,7 @@ export interface CatalogSyncPayload {
   catalogName?: string;
 }
 
+// Sync OSCAL catalog + baseline into SWFT.
 export const syncSwftCatalog = async (payload: CatalogSyncPayload): Promise<CatalogSyncResult> => {
   const form = new FormData();
   form.append("catalog", payload.catalogFile);
@@ -132,6 +148,7 @@ export const syncSwftCatalog = async (payload: CatalogSyncPayload): Promise<Cata
   );
 };
 
+// Import a custom Azure Policy initiative export.
 export const importSwftPolicy = async (file: File, name: string, scope: string): Promise<PolicyImportResult> => {
   const form = new FormData();
   form.append("file", file);
@@ -145,6 +162,7 @@ export const importSwftPolicy = async (file: File, name: string, scope: string):
   );
 };
 
+// Import policy state results for an initiative.
 export const importSwftPolicyStates = async (file: File, initiative: string, scope: string): Promise<PolicyStateResult> => {
   const form = new FormData();
   form.append("file", file);
@@ -158,6 +176,7 @@ export const importSwftPolicyStates = async (file: File, initiative: string, sco
   );
 };
 
+// Shared multipart uploader for evidence so individual helpers stay small.
 const uploadEvidence = async (path: string, form: FormData): Promise<EvidenceResult> =>
   handle<EvidenceResult>(
     await fetch(apiUrl(path), {
@@ -166,12 +185,14 @@ const uploadEvidence = async (path: string, form: FormData): Promise<EvidenceRes
     })
   );
 
+// Upload a CycloneDX SBOM file for a run.
 export const uploadSwftSbom = async (projectId: string, runId: string, file: File): Promise<EvidenceResult> => {
   const form = new FormData();
   form.append("file", file);
   return uploadEvidence(`/swft/${encodeProject(projectId)}/runs/${encodeURIComponent(runId)}/evidence/sbom`, form);
 };
 
+// Upload a Trivy vulnerability report for a run.
 export const uploadSwftTrivy = async (projectId: string, runId: string, file: File, artifactHint?: string): Promise<EvidenceResult> => {
   const form = new FormData();
   form.append("file", file);
@@ -179,6 +200,7 @@ export const uploadSwftTrivy = async (projectId: string, runId: string, file: Fi
   return uploadEvidence(`/swft/${encodeProject(projectId)}/runs/${encodeURIComponent(runId)}/evidence/trivy`, form);
 };
 
+// Upload a cosign signature artifact for a run.
 export const uploadSwftSignature = async (
   projectId: string,
   runId: string,
@@ -193,9 +215,12 @@ export const uploadSwftSignature = async (
   return uploadEvidence(`/swft/${encodeProject(projectId)}/runs/${encodeURIComponent(runId)}/evidence/signature`, form);
 };
 
+// Get the allowed Azure services list.
 export const fetchSwftServices = async (): Promise<string[]> => handle<string[]>(await fetch(apiUrl("/swft/services")));
+// Get the allowed Azure regions list.
 export const fetchSwftRegions = async (): Promise<string[]> => handle<string[]>(await fetch(apiUrl("/swft/regions")));
 
+// Pull evidence from storage by runId (auto import path).
 export const ingestSwftEvidenceFromStorage = async (projectId: string, runId: string, kinds?: string[]): Promise<StorageEvidenceResponse> => {
   const body = kinds ? { kinds } : {};
   return handle<StorageEvidenceResponse>(
@@ -207,8 +232,10 @@ export const ingestSwftEvidenceFromStorage = async (projectId: string, runId: st
   );
 };
 
+// List built-in Azure Policy sets available in the catalog.
 export const fetchAzurePolicySets = async (): Promise<AzurePolicySet[]> => handle<AzurePolicySet[]>(await fetch(apiUrl("/swft/policy/builtins")));
 
+// Import a built-in Azure Policy set by ID (optional scope override).
 export const importAzurePolicySet = async (policyId: string, scope?: string): Promise<PolicyImportResult> => {
   const payload: Record<string, string> = { policy_id: policyId };
   if (scope) payload.scope = scope;

@@ -1,3 +1,4 @@
+// Run overview card: timeline, GitHub context, image provenance, artifacts list.
 import type { RunDetail } from "@lib/types";
 import { InfoPopover } from "@components/InfoPopover";
 

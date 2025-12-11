@@ -1,3 +1,4 @@
+// Shared app chrome: header, navigation, theme toggle, and page container.
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ThemeToggle } from "@components/ThemeToggle";

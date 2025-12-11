@@ -1,11 +1,14 @@
+// Artifact identifiers supported by the backend.
 export type ArtifactType = "sbom" | "trivy" | "run" | "appdesign";
 
+// Lightweight project list entry.
 export interface ProjectSummary {
   project_id: string;
   run_count: number;
   latest_run_at: string | null;
 }
 
+// Aggregated run row used in tables/charts.
 export interface RunSummary {
   project_id: string;
   run_id: string;
@@ -18,6 +21,7 @@ export interface RunSummary {
   deployment_url: string | null;
 }
 
+// Descriptor for a stored artifact blob.
 export interface ArtifactDescriptor {
   project_id: string;
   run_id: string;
@@ -28,27 +32,32 @@ export interface ArtifactDescriptor {
   size_bytes: number | null;
 }
 
+// Full run detail returned by the backend.
 export interface RunDetail {
   summary: RunSummary;
   artifacts: ArtifactDescriptor[];
   metadata: Record<string, unknown>;
 }
 
+// Standard async state shape for useApi.
 export interface ApiState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
 }
 
+// Assistant persona/facet/history selector options.
 export type AssistantPersona = "security_assessor" | "compliance_officer" | "devops_engineer" | "software_developer";
 export type AssistantFacet = "run_manifest" | "sbom" | "trivy" | "general" | "architecture";
 export type AssistantHistoryDepth = 0 | 2 | 5 | 7 | 10 | 15 | "all";
 
+// Message passed to/returned from the assistant.
 export interface AssistantMessage {
   role: "user" | "assistant";
   content: string;
 }
 
+// Payload sent to /assistant/chat or /assistant/chat/stream.
 export interface AssistantRequest {
   question: string;
   persona: AssistantPersona;
@@ -62,6 +71,7 @@ export interface AssistantRequest {
   run_id?: string;
 }
 
+// Metadata describing the assistant answer/model.
 export interface AssistantMetadata {
   provider: string;
   model_key: string;
@@ -74,12 +84,14 @@ export interface AssistantMetadata {
   total_context_window?: number | null;
 }
 
+// Synchronous assistant response.
 export interface AssistantResponse {
   answer: string;
   conversation_id: string;
   metadata: AssistantMetadata;
 }
 
+// Model option shown in the assistant model picker.
 export interface AssistantModelOption {
   key: string;
   label: string;
@@ -89,6 +101,7 @@ export interface AssistantModelOption {
   max_output_tokens?: number | null;
 }
 
+// Assistant configuration payload from /assistant/config.
 export interface AssistantConfig {
   provider: string;
   models: AssistantModelOption[];
@@ -98,6 +111,7 @@ export interface AssistantConfig {
   streaming_enabled: boolean;
 }
 
+// Streamed assistant events over NDJSON.
 export type AssistantStreamEvent =
   | {
       type: "metadata";
@@ -119,6 +133,7 @@ export type AssistantStreamEvent =
       error: string;
     };
 
+// SWFT project boundary record.
 export interface SwftProject {
   project_id: string;
   services: string[];
@@ -126,12 +141,14 @@ export interface SwftProject {
   boundary_description: string | null;
 }
 
+// Payload for creating/updating a SWFT project boundary.
 export interface SwftProjectPayload {
   services: string[];
   regions: string[];
   boundary_description?: string | null;
 }
 
+// Control parameter detail for workspace forms.
 export interface SwftParameter {
   control_id: string;
   param_id: string;
@@ -141,11 +158,13 @@ export interface SwftParameter {
   current_value?: string | null;
 }
 
+// OSCAL catalog sync result.
 export interface CatalogSyncResult {
   catalog: Record<string, unknown>;
   baseline: Record<string, unknown>;
 }
 
+// Azure Policy initiative import result.
 export interface PolicyImportResult {
   initiative: string;
   scope: string;
@@ -154,11 +173,13 @@ export interface PolicyImportResult {
   version: string;
 }
 
+// Policy state import result.
 export interface PolicyStateResult {
   processed: number;
   inserted: number;
 }
 
+// Evidence ingestion result for a single artifact upload.
 export interface EvidenceResult {
   evidence_id: number;
   run_id: string;
@@ -166,6 +187,7 @@ export interface EvidenceResult {
   metadata?: Record<string, unknown>;
 }
 
+// Itemized status for auto-import evidence.
 export interface StorageEvidenceItem {
   kind: string;
   status: "stored" | "missing" | "failed";
@@ -174,12 +196,14 @@ export interface StorageEvidenceItem {
   metadata?: Record<string, unknown>;
 }
 
+// Auto-import evidence response wrapper.
 export interface StorageEvidenceResponse {
   project_id: string;
   run_id: string;
   results: StorageEvidenceItem[];
 }
 
+// Built-in Azure Policy set descriptor.
 export interface AzurePolicySet {
   id: string;
   label: string;

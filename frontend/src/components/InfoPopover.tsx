@@ -1,3 +1,4 @@
+// Small tooltip-style popover used for inline help copy.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type InfoPopoverProps = {
@@ -56,4 +57,3 @@ export const InfoPopover = ({ title, description, items, align = "right" }: Info
     </div>
   );
 };
-

@@ -1,3 +1,4 @@
+// AI assistant overlay: model/persona picker, auto-context wiring, and streaming chat UI.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import {

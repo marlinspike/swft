@@ -1,3 +1,4 @@
+// Reusable accordion-style wrapper for dashboard sections.
 import { ReactNode, useState } from "react";
 
 type CollapsibleSectionProps = {

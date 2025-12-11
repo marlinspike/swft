@@ -1,3 +1,4 @@
+// Light/dark mode toggle hooked into the theme context.
 import { useTheme } from "@hooks/useTheme";
 
 const SunIcon = () => (

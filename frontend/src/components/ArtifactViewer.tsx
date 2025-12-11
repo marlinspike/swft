@@ -1,3 +1,4 @@
+// Simple helper to fetch and display a raw artifact JSON blob.
 import { useEffect, useState } from "react";
 import type { ArtifactType } from "@lib/types";
 import { fetchArtifact } from "@lib/api";

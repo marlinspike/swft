@@ -1,3 +1,4 @@
+// Lightweight breadcrumb trail with optional links.
 import { Link } from "react-router-dom";
 
 export const Breadcrumbs = ({ items }: { items: { label: string; to?: string }[] }) => (

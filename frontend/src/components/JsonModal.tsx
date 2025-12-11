@@ -1,3 +1,4 @@
+// Full-screen modal for viewing/downloading raw JSON/text content.
 import { useEffect } from "react";
 
 type JsonModalProps = {

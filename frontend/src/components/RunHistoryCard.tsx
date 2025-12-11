@@ -1,3 +1,4 @@
+// Authorization signals dashboard with Nivo charts (Trivy, SBOM, cosign, evidence, cadence).
 import { useMemo, useState, type ComponentProps } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResponsiveLine as NivoResponsiveLine, type Point, type PointSymbolProps, type SliceTooltipProps } from "@nivo/line";
