@@ -141,11 +141,23 @@ Modifed Dockerfile to pull latest security patches:
   - perl-base 
 
 
-## 11. Change Log
+
+### Recent Remediations
+| Date | Finding / Risk | Fix Applied | Code Change | Evidence |
+|------|----------------|-------------|-------------|----------|
+| 2025-11-11 | OS package CVEs (libxml2, libexpat1, libgnutls30, libc6, libicu72, libxslt1.1, libtiff6, krb5, openssl, perl-base) | Pulled patched Debian packages during image build | `backend/Dockerfile`, `frontend/Dockerfile` | CVEs Fixed table + Trivy report package versions |
+| 2025-12-15 | Frontend dependency alerts | Lockfile updated to newer package versions | `frontend/package-lock.json` | `run.json` commitSha + lockfile diff + Trivy findings delta |
+
+### Demo Questions the Assistant Can Answer
+- "Which commit fixed the libxml2 CVEs and how was it done?"
+- "Show me where we updated npm dependencies to remediate alerts."
+- "Why did the Trivy fail-set drop to zero in the last run, and what code change caused it?"
+
+## 12. Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2025-12-19 | Added remediation evidence trail for assistant demos. | Dev Team |
 | 2025-11-11 | Updated CVEs Fixed | Dev Team |
 | 2025-11-11 | Replaced template with SWFT-specific architecture, controls, and assistant guidance. | Platform Team |
 | 2025-11-01 | Initial outline committed to support AO assistant conversations. | Platform Team |
-
