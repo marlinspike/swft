@@ -51,8 +51,7 @@ uv sync
 uv run swft config show
 
 # Start the backend API (from repo root)
-uv run -- python -m uvicorn app.main:app --reload --app-dir backend/app --port 8000
-```
+uv run -- python -m uvicorn app.main:app --reload --app-dir backend --port 8000
 
 If you previously created `backend/.venv`, remove it to avoid accidentally running the API outside the workspace.
 
@@ -60,7 +59,7 @@ If you previously created `backend/.venv`, remove it to avoid accidentally runni
 
 ```bash
 # assuming uv sync has already created .venv/
-uv run -- python -m uvicorn app.main:app --reload --app-dir backend/app --port 8000
+uv run -- python -m uvicorn app.main:app --reload --app-dir backend --port 8000
 ```
 
 Copy `backend/.env.example` to `backend/.env` and fill in the values, or export them in your shell:
