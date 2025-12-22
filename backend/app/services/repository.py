@@ -59,7 +59,7 @@ class AzureBlobRepository:
                 self._client = BlobServiceClient.from_connection_string(storage.connection_string)
             elif storage.account_name:
                 credential = _build_credential(auth)
-                url = f"https://{storage.account_name}.blob.core.windows.net"
+                url = f"https://{storage.account_name}.blob.core.usgovcloudapi.net"
                 self._client = BlobServiceClient(account_url=url, credential=credential)
             else:
                 raise RepositoryError("Missing Azure storage account configuration.")
