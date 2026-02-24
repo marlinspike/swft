@@ -147,6 +147,12 @@ Modifed Dockerfile to pull latest security patches:
 |------|----------------|-------------|-------------|----------|
 | 2025-11-11 | OS package CVEs (libxml2, libexpat1, libgnutls30, libc6, libicu72, libxslt1.1, libtiff6, krb5, openssl, perl-base) | Pulled patched Debian packages during image build | `backend/Dockerfile`, `frontend/Dockerfile` | CVEs Fixed table + Trivy report package versions |
 | 2025-12-15 | Frontend dependency alerts | Lockfile updated to newer package versions | `frontend/package-lock.json` | `run.json` commitSha + lockfile diff + Trivy findings delta |
+| 2026-02-24 | **azure-core** – Deserialization of untrusted data (Dependabot #19); upgraded v1.36.0 → v1.38.2 | `uv lock --upgrade-package azure-core` | `uv.lock` | Dependabot alert #19 closed |
+| 2026-02-24 | **urllib3** – Decompression-bomb safeguards bypassed via HTTP redirects; unbounded decompression chain links; streaming API improperly handles highly compressed data (Dependabot #16, #17, #18); upgraded v2.5.0 → v2.6.3 | `uv lock --upgrade-package urllib3` | `uv.lock` | Dependabot alerts #16, #17, #18 closed |
+| 2026-02-24 | **python-multipart** – Arbitrary file write via non-default configuration (Dependabot #21); upgraded v0.0.20 → v0.0.22 | `uv lock --upgrade-package python-multipart` | `uv.lock` | Dependabot alert #21 closed |
+| 2026-02-24 | **cryptography** – Subgroup attack due to missing subgroup validation for SECT curves (Dependabot #22); upgraded v46.0.3 → v46.0.5 | `uv lock --upgrade-package cryptography` | `uv.lock` | Dependabot alert #22 closed |
+| 2026-02-24 | **starlette** – O(n²) DoS via Range header merging in `FileResponse`; second starlette alert (Dependabot #15); upgraded v0.46.2 → v0.49.3 | `uv lock --upgrade-package starlette` | `uv.lock` | Dependabot alert #15 closed |
+| 2026-02-24 | **Trivy scanner** – Updated from v0.67.2 → v0.69.0 to pick up latest vulnerability DB and scanner improvements | Updated `version` field in both Trivy workflow steps | `.github/workflows/deploy.yml` | Trivy release notes v0.69.x |
 
 ### Demo Questions the Assistant Can Answer
 - "Which commit fixed the libxml2 CVEs and how was it done?"
@@ -157,6 +163,7 @@ Modifed Dockerfile to pull latest security patches:
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-02-24 | Resolved 6 Dependabot alerts: azure-core→1.38.2, urllib3→2.6.3 (3 alerts), python-multipart→0.0.22, cryptography→46.0.5, starlette→0.49.3; bumped Trivy to v0.69.0. | Dev Team |
 | 2025-12-19 | Added remediation evidence trail for assistant demos. | Dev Team |
 | 2025-11-11 | Updated CVEs Fixed | Dev Team |
 | 2025-11-11 | Replaced template with SWFT-specific architecture, controls, and assistant guidance. | Platform Team |
