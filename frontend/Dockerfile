@@ -24,9 +24,12 @@ RUN npm run build && npm prune --omit=dev
 
 FROM nginxinc/nginx-unprivileged:1.27-bookworm AS runtime
 USER root
-# Pull in security updates for xml/gnutls/glibc/icu/xslt/tiff/perl/krb5/openssl flagged by the latest scan.
+# Pull in security updates for xml/gnutls/glibc/icu/xslt/tiff/perl/krb5/openssl/libpng/pam/gpg flagged by the latest scan.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
+        gpgv \
+        libpam0g \
+        libpng16-16 \
         libxml2 \
         libexpat1 \
         libgnutls30 \

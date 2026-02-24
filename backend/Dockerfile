@@ -22,9 +22,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 WORKDIR /srv/app
-# Install patched system libraries flagged by the latest scan (xml/gnutls/glibc/icu/xslt/tiff/perl/krb5/openssl).
+# Install patched system libraries flagged by the latest scan (xml/gnutls/glibc/icu/xslt/tiff/perl/krb5/openssl/libpng/pam/gpg).
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
+        gpgv \
+        libpam0g \
+        libpng16-16 \
         libxml2 \
         libexpat1 \
         libgnutls30 \

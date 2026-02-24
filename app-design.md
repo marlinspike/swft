@@ -121,6 +121,11 @@ Inherited controls include GitHub Enterprise SaaS baselines, Azure platform encr
 | CVE-2025-6021    | libxml2             | 2.9.14+dfsg-1.3~deb12u1     | 2.9.14+dfsg-1.3~deb12u3  |
 | CVE-2025-7424    | libxslt1.1          | 1.1.35-1+deb12u1            | 1.1.35-1+deb12u2         |
 | CVE-2023-31484   | perl-base           | 5.36.0-7+deb12u2            | 5.36.0-7+deb12u3         |
+| CVE-2026-25646   | libpng16-16         | 1.6.39-2                    | 1.6.39-2+deb12u3         |
+| CVE-2025-66293   | libpng16-16         | 1.6.39-2                    | 1.6.39-2+deb12u1         |
+| CVE-2025-6020    | libpam0g            | 1.5.2-6+deb12u1             | 1.5.2-6+deb12u2          |
+| CVE-2024-22365   | libpam0g            | 1.5.2-6+deb12u1             | 1.5.2-6+deb12u2          |
+| CVE-2025-68973   | gpgv                | 2.2.40-1.1                  | 2.2.40-1.1+deb12u2       |
 
 ### Method
 Modifed Dockerfile to pull latest security patches:
@@ -139,8 +144,9 @@ Modifed Dockerfile to pull latest security patches:
   - openssl 
   - libssl3 
   - perl-base 
-
-
+  - libpng16-16 
+  - libpam0g 
+  - gpgv 
 
 ### Recent Remediations
 | Date | Finding / Risk | Fix Applied | Code Change | Evidence |
@@ -153,6 +159,7 @@ Modifed Dockerfile to pull latest security patches:
 | 2026-02-24 | **cryptography** – Subgroup attack due to missing subgroup validation for SECT curves (Dependabot #22); upgraded v46.0.3 → v46.0.5 | `uv lock --upgrade-package cryptography` | `uv.lock` | Dependabot alert #22 closed |
 | 2026-02-24 | **starlette** – O(n²) DoS via Range header merging in `FileResponse`; second starlette alert (Dependabot #15); upgraded v0.46.2 → v0.49.3 | `uv lock --upgrade-package starlette` | `uv.lock` | Dependabot alert #15 closed |
 | 2026-02-24 | **Trivy scanner** – Updated from v0.67.2 → v0.69.0 to pick up latest vulnerability DB and scanner improvements | Updated `version` field in both Trivy workflow steps | `.github/workflows/deploy.yml` | Trivy release notes v0.69.x |
+| 2026-02-24 | **OS package CVEs** – libpng16-16 heap buffer overflow (CVE-2026-25646 HIGH) and out-of-bounds read (CVE-2025-66293 HIGH); libpam0g directory traversal (CVE-2025-6020 HIGH) and user-namespace block (CVE-2024-22365 MEDIUM); gpgv information disclosure / arbitrary code execution (CVE-2025-68973 HIGH) | Pulled patched Debian packages during image build | `backend/Dockerfile`, `frontend/Dockerfile` | CVEs Fixed table |
 
 ### Demo Questions the Assistant Can Answer
 - "Which commit fixed the libxml2 CVEs and how was it done?"
@@ -163,6 +170,7 @@ Modifed Dockerfile to pull latest security patches:
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-02-24 | Resolved OS package CVEs: libpng16-16 (CVE-2026-25646, CVE-2025-66293), libpam0g (CVE-2025-6020, CVE-2024-22365), gpgv (CVE-2025-68973); patched via apt-get in both Dockerfiles. | Dev Team |
 | 2026-02-24 | Resolved 6 Dependabot alerts: azure-core→1.38.2, urllib3→2.6.3 (3 alerts), python-multipart→0.0.22, cryptography→46.0.5, starlette→0.49.3; bumped Trivy to v0.69.0. | Dev Team |
 | 2025-12-19 | Added remediation evidence trail for assistant demos. | Dev Team |
 | 2025-11-11 | Updated CVEs Fixed | Dev Team |
