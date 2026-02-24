@@ -14,7 +14,7 @@ COPY backend/pyproject.toml backend/README.md ./
 COPY backend/app ./app
 # Create a dedicated virtualenv to carry into the runtime layer.
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install --upgrade pip "wheel>=0.46.2" && \
     /opt/venv/bin/pip install --no-cache-dir .
 
 FROM python:3.11-slim-bookworm AS runtime
