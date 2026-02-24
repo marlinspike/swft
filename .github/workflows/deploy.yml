@@ -274,7 +274,7 @@ jobs:
           test -s "sbom.cyclonedx.json" || { echo "SBOM not created"; ls -la; exit 2; }
 
       - name: Run Trivy vulnerability scanner (JSON)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.0
         env:
           TRIVY_USERNAME: ${{ env.ACR_USERNAME }}
           TRIVY_PASSWORD: ${{ env.ACR_PASSWORD }}
@@ -314,7 +314,7 @@ jobs:
           fi
 
       - name: Generate Trivy SARIF
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           version: 'v0.67.2'
           scan-type: 'image'
