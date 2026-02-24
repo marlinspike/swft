@@ -1,6 +1,7 @@
 {
     "python.languageServer": "None",
     "chat.tools.terminal.autoApprove": {
-        "npm install": true
+        "npm install": true,
+        "uv": true
     }
 }
