@@ -9,7 +9,13 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .[dev]
-uvicorn app.main:app --reload
+./scripts/start-dev.sh
+```
+
+If port `8000` is in use, run with a different port:
+
+```bash
+PORT=8001 ./scripts/start-dev.sh
 ```
 
 Copy `.env.example` to `.env` and update the values, or export them directly in your shell:
