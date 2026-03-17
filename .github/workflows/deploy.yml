@@ -273,20 +273,30 @@ jobs:
           set -euo pipefail
           test -s "sbom.cyclonedx.json" || { echo "SBOM not created"; ls -la; exit 2; }
 
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy --version
+
       - name: Run Trivy vulnerability scanner (JSON)
-        uses: aquasecurity/trivy-action@0.34.0
         env:
           TRIVY_USERNAME: ${{ env.ACR_USERNAME }}
           TRIVY_PASSWORD: ${{ env.ACR_PASSWORD }}
-        with:
-          scan-type: 'image'
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format: 'json'
-          output: trivy-report.json
-          severity: ${{ steps.cfg.outputs.scan_levels }}
-          ignore-unfixed: ${{ steps.cfg.outputs.ignore_unfixed }}
-          scanners: 'vuln'
-          exit-code: '0'
+        run: |
+          set -euo pipefail
+          IGNORE_UNFIXED_FLAG=""
+          if [ "${{ steps.cfg.outputs.ignore_unfixed }}" = "true" ]; then
+            IGNORE_UNFIXED_FLAG="--ignore-unfixed"
+          fi
+          trivy image \
+            --scanners vuln \
+            --severity "${{ steps.cfg.outputs.scan_levels }}" \
+            $IGNORE_UNFIXED_FLAG \
+            --format json \
+            --output trivy-report.json \
+            --exit-code 0 \
+            "${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
 
       - name: Verify Trivy JSON exists
         run: |
@@ -313,16 +323,23 @@ jobs:
           fi
 
       - name: Generate Trivy SARIF
-        uses: aquasecurity/trivy-action@0.34.0
-        with:
-          scan-type: 'image'
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format: 'sarif'
-          output: trivy-results.sarif
-          severity: ${{ steps.cfg.outputs.scan_levels }}
-          ignore-unfixed: ${{ steps.cfg.outputs.ignore_unfixed }}
-          scanners: 'vuln'
-          exit-code: '0'
+        env:
+          TRIVY_USERNAME: ${{ env.ACR_USERNAME }}
+          TRIVY_PASSWORD: ${{ env.ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          IGNORE_UNFIXED_FLAG=""
+          if [ "${{ steps.cfg.outputs.ignore_unfixed }}" = "true" ]; then
+            IGNORE_UNFIXED_FLAG="--ignore-unfixed"
+          fi
+          trivy image \
+            --scanners vuln \
+            --severity "${{ steps.cfg.outputs.scan_levels }}" \
+            $IGNORE_UNFIXED_FLAG \
+            --format sarif \
+            --output trivy-results.sarif \
+            --exit-code 0 \
+            "${{ env.ACR_LOGIN_SERVER }}/${{ env.TARGET_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
 
       - name: Verify Trivy SARIF exists
         run: |
