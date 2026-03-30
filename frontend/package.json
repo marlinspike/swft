@@ -35,7 +35,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3",
-    "vite": "^7.2.2"
+    "vite": "^7.3.1"
   },
   "overrides": {
     "@remix-run/router": ">=1.23.2",
