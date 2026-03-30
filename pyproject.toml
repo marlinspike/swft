@@ -32,3 +32,6 @@ packages = ["swft"]
 
 [tool.uv.workspace]
 members = ["backend"]
+
+[tool.uv.sources]
+swft = { workspace = true }
