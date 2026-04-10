@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install pip/setuptools if needed
 RUN python -m ensurepip --upgrade && \
-    python -m pip install --upgrade pip "setuptools>=78.1.1"
+    python -m pip install --upgrade pip "setuptools>=82.0.1" "wheel>=0.46.2"
 
 # Copy application source and dependency manifest in one layer
 COPY . .

@@ -14,7 +14,7 @@ COPY backend/pyproject.toml backend/README.md ./
 COPY backend/app ./app
 # Create a dedicated virtualenv to carry into the runtime layer.
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip "wheel>=0.46.2" && \
+    /opt/venv/bin/pip install --upgrade pip "setuptools>=82.0.1" "wheel>=0.46.2" && \
     /opt/venv/bin/pip install --no-cache-dir .
 
 FROM python:3.11-slim-bookworm AS runtime
@@ -43,6 +43,8 @@ RUN apt-get update \
         libssl3 \
         perl-base \
     && rm -rf /var/lib/apt/lists/*
+# Trivy flagged vulnerable vendored wheel/jaraco.context in base setuptools under /usr/local.
+RUN python -m pip install --no-cache-dir --upgrade "setuptools>=82.0.1" "wheel>=0.46.2"
 # Run as an unprivileged user for better isolation.
 RUN groupadd --system swft && useradd --system --gid swft swft
 COPY --from=builder /opt/venv /opt/venv
