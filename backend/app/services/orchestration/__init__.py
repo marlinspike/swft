@@ -1,6 +1,8 @@
 from .actions import ChainOfCommandAgent, OrchestrationActionPlanner
 from .detection import OrchestrationDetector
 from .execution import (
+    DispatcherErrorClass,
+    DispatcherExecutionError,
     DryRunMutationDispatcher,
     FailedMutation,
     MutationExecutionReport,
@@ -17,6 +19,8 @@ __all__ = [
     "OrchestrationDetector",
     "PaperclipAdapterError",
     "PaperclipIssueFeedAdapter",
+    "DispatcherErrorClass",
+    "DispatcherExecutionError",
     "DryRunMutationDispatcher",
     "FailedMutation",
     "MutationExecutionReport",

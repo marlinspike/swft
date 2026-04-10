@@ -115,5 +115,36 @@
       "signal_type": "in_progress_stale_progress"
     }
   ],
-  "mode": "live"
+  "mode": "live",
+  "triage_report": {
+    "failure_routes": {
+      "non_retryable_policy": [],
+      "retry_exhausted": []
+    },
+    "owner_routing": [
+      {
+        "action_count": 3,
+        "action_types": {
+          "assign_owner": 1,
+          "escalate_blocker": 1,
+          "request_progress_update": 1
+        },
+        "owner_agent_id": "agent-cto",
+        "owner_name": "CTO"
+      }
+    ],
+    "signal_counts": {
+      "blocked_stale": 1,
+      "high_priority_unassigned": 1,
+      "in_progress_stale_progress": 1
+    },
+    "top_blocked_categories": [
+      {
+        "category": "Issue is blocked but has no blocker-status comment to track ownership.",
+        "count": 1
+      }
+    ],
+    "top_failed_categories": [],
+    "top_failure_reasons": []
+  }
 }
