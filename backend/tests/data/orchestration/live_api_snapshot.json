@@ -1,0 +1,78 @@
+{
+  "issues": [
+    {
+      "id": "issue-blocked",
+      "identifier": "SHAAA-301",
+      "title": "Blocked migration waiting on infra",
+      "status": "blocked",
+      "priority": "medium",
+      "updatedAt": "2026-04-08T06:00:00Z"
+    },
+    {
+      "id": "issue-unassigned",
+      "identifier": "SHAAA-302",
+      "title": "Critical incident without owner",
+      "status": "todo",
+      "priority": "critical",
+      "updated_at": "2026-04-10T10:30:00Z"
+    },
+    {
+      "id": "issue-progress",
+      "identifier": "SHAAA-303",
+      "title": "In-progress implementation with stale updates",
+      "status": "in_progress",
+      "priority": "high",
+      "updatedAt": "2026-04-09T07:00:00Z",
+      "assigneeAgentId": "agent-eng"
+    },
+    {
+      "id": "issue-done",
+      "identifier": "SHAAA-399",
+      "title": "Completed item should not be scanned",
+      "status": "done",
+      "priority": "high",
+      "updatedAt": "2026-04-10T09:00:00Z"
+    }
+  ],
+  "comments_by_issue": {
+    "issue-progress": [
+      {
+        "id": "c-progress-old",
+        "body": "Progress update: implementation started and tests pending",
+        "createdAt": "2026-04-09T00:00:00Z",
+        "authorAgentId": "agent-eng"
+      },
+      {
+        "id": "c-progress-note",
+        "body": "Review thread opened by QA; awaiting reviewer feedback",
+        "created_at": "2026-04-10T06:00:00Z",
+        "author_agent_id": "agent-eng"
+      }
+    ],
+    "issue-unassigned": [
+      {
+        "id": "c-unassigned-1",
+        "body": "Needs owner assignment",
+        "createdAt": "2026-04-10T09:30:00Z",
+        "authorUserId": "user-ops"
+      }
+    ]
+  },
+  "agents": [
+    {
+      "id": "agent-ceo",
+      "name": "CEO",
+      "role": "ceo"
+    },
+    {
+      "id": "agent-cto",
+      "name": "CTO",
+      "role": "cto"
+    },
+    {
+      "id": "agent-eng",
+      "name": "Principal Coding Architect",
+      "role": "engineer"
+    }
+  ]
+}

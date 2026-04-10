@@ -1,0 +1,55 @@
+{
+  "now": "2026-04-10T12:00:00Z",
+  "chain_of_command": [
+    {
+      "id": "agent-cto",
+      "name": "CTO"
+    }
+  ],
+  "issues": [
+    {
+      "id": "i-blocked",
+      "identifier": "SHAAA-200",
+      "title": "Blocked issue waiting on external decision",
+      "status": "blocked",
+      "priority": "medium",
+      "updated_at": "2026-04-08T08:00:00Z",
+      "assignee_agent_id": "agent-eng"
+    },
+    {
+      "id": "i-unassigned",
+      "identifier": "SHAAA-201",
+      "title": "Critical escalation has no owner",
+      "status": "todo",
+      "priority": "critical",
+      "updated_at": "2026-04-10T11:00:00Z"
+    },
+    {
+      "id": "i-stale-progress",
+      "identifier": "SHAAA-202",
+      "title": "Implementation in progress with no updates",
+      "status": "in_progress",
+      "priority": "high",
+      "updated_at": "2026-04-09T10:00:00Z",
+      "assignee_agent_id": "agent-eng"
+    }
+  ],
+  "comments_by_issue": {
+    "i-blocked": [
+      {
+        "id": "c-blocked-1",
+        "body": "Blocked by infra team; waiting on workspace mapping",
+        "created_at": "2026-04-08T09:00:00Z",
+        "author_agent_id": "agent-eng"
+      }
+    ],
+    "i-stale-progress": [
+      {
+        "id": "c-progress-1",
+        "body": "Progress update: implementation started and tests are pending",
+        "created_at": "2026-04-09T08:00:00Z",
+        "author_agent_id": "agent-eng"
+      }
+    ]
+  }
+}

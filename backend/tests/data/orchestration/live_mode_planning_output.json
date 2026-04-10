@@ -1,0 +1,119 @@
+{
+  "actions": [
+    {
+      "action_type": "escalate_blocker",
+      "comment_draft": "## Orchestration Escalation Draft\n\nIssue `SHAAA-301` triggered `blocked_stale`.\n\n- Reason: Issue is blocked but has no blocker-status comment to track ownership.\n- Recommended owner: CTO (agent-cto).\n- Next step: confirm ownership and post status update in-thread.",
+      "dispatch_contract": {
+        "comment_draft": "## Orchestration Escalation Draft\n\nIssue `SHAAA-301` triggered `blocked_stale`.\n\n- Reason: Issue is blocked but has no blocker-status comment to track ownership.\n- Recommended owner: CTO (agent-cto).\n- Next step: confirm ownership and post status update in-thread.",
+        "follow_up_issue_intent": {
+          "description": "Auto-generated follow-up from orchestration scanner.\n\nSource issue: SHAAA-301 (issue-blocked)\nSignal: blocked_stale\nReason: Issue is blocked but has no blocker-status comment to track ownership.\nRequest: post explicit unblock owner, dependency, and ETA.",
+          "labels": [
+            "orchestration",
+            "blocker-follow-up"
+          ],
+          "priority": "high",
+          "source_issue_id": "issue-blocked",
+          "title": "Unblock plan required for SHAAA-301"
+        },
+        "recommended_assignee": {
+          "agent_id": "agent-cto",
+          "name": "CTO"
+        },
+        "source_issue": {
+          "assignee_agent_id": null,
+          "assignee_user_id": null,
+          "id": "issue-blocked",
+          "identifier": "SHAAA-301",
+          "priority": "medium",
+          "status": "blocked",
+          "title": "Blocked migration waiting on infra",
+          "updated_at": "2026-04-08T06:00:00+00:00"
+        }
+      },
+      "issue_id": "issue-blocked",
+      "issue_identifier": "SHAAA-301",
+      "recommended_assignee_agent_id": "agent-cto",
+      "recommended_assignee_name": "CTO",
+      "should_open_follow_up_issue": true,
+      "summary": "Issue is blocked but has no blocker-status comment to track ownership."
+    },
+    {
+      "action_type": "assign_owner",
+      "comment_draft": "## Orchestration Escalation Draft\n\nIssue `SHAAA-302` triggered `high_priority_unassigned`.\n\n- Reason: High-priority issue has no assignee.\n- Recommended owner: CTO (agent-cto).\n- Next step: confirm ownership and post status update in-thread.",
+      "dispatch_contract": {
+        "comment_draft": "## Orchestration Escalation Draft\n\nIssue `SHAAA-302` triggered `high_priority_unassigned`.\n\n- Reason: High-priority issue has no assignee.\n- Recommended owner: CTO (agent-cto).\n- Next step: confirm ownership and post status update in-thread.",
+        "follow_up_issue_intent": null,
+        "recommended_assignee": {
+          "agent_id": "agent-cto",
+          "name": "CTO"
+        },
+        "source_issue": {
+          "assignee_agent_id": null,
+          "assignee_user_id": null,
+          "id": "issue-unassigned",
+          "identifier": "SHAAA-302",
+          "priority": "critical",
+          "status": "todo",
+          "title": "Critical incident without owner",
+          "updated_at": "2026-04-10T10:30:00+00:00"
+        }
+      },
+      "issue_id": "issue-unassigned",
+      "issue_identifier": "SHAAA-302",
+      "recommended_assignee_agent_id": "agent-cto",
+      "recommended_assignee_name": "CTO",
+      "should_open_follow_up_issue": false,
+      "summary": "High-priority issue has no assignee."
+    },
+    {
+      "action_type": "request_progress_update",
+      "comment_draft": "## Orchestration Escalation Draft\n\nIssue `SHAAA-303` triggered `in_progress_stale_progress`.\n\n- Reason: In-progress issue has stale progress updates.\n- Recommended owner: CTO (agent-cto).\n- Next step: confirm ownership and post status update in-thread.",
+      "dispatch_contract": {
+        "comment_draft": "## Orchestration Escalation Draft\n\nIssue `SHAAA-303` triggered `in_progress_stale_progress`.\n\n- Reason: In-progress issue has stale progress updates.\n- Recommended owner: CTO (agent-cto).\n- Next step: confirm ownership and post status update in-thread.",
+        "follow_up_issue_intent": null,
+        "recommended_assignee": {
+          "agent_id": "agent-cto",
+          "name": "CTO"
+        },
+        "source_issue": {
+          "assignee_agent_id": "agent-eng",
+          "assignee_user_id": null,
+          "id": "issue-progress",
+          "identifier": "SHAAA-303",
+          "priority": "high",
+          "status": "in_progress",
+          "title": "In-progress implementation with stale updates",
+          "updated_at": "2026-04-09T07:00:00+00:00"
+        }
+      },
+      "issue_id": "issue-progress",
+      "issue_identifier": "SHAAA-303",
+      "recommended_assignee_agent_id": "agent-cto",
+      "recommended_assignee_name": "CTO",
+      "should_open_follow_up_issue": false,
+      "summary": "In-progress issue has stale progress updates."
+    }
+  ],
+  "company_id": "company-123",
+  "detections": [
+    {
+      "issue_id": "issue-blocked",
+      "issue_identifier": "SHAAA-301",
+      "reason": "Issue is blocked but has no blocker-status comment to track ownership.",
+      "signal_type": "blocked_stale"
+    },
+    {
+      "issue_id": "issue-unassigned",
+      "issue_identifier": "SHAAA-302",
+      "reason": "High-priority issue has no assignee.",
+      "signal_type": "high_priority_unassigned"
+    },
+    {
+      "issue_id": "issue-progress",
+      "issue_identifier": "SHAAA-303",
+      "reason": "In-progress issue has stale progress updates.",
+      "signal_type": "in_progress_stale_progress"
+    }
+  ],
+  "mode": "live"
+}
