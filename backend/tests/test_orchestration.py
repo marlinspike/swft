@@ -6,6 +6,8 @@ from pathlib import Path
 
 from app.services.orchestration import (
     ChainOfCommandAgent,
+    DispatcherErrorClass,
+    DispatcherExecutionError,
     DryRunMutationDispatcher,
     OrchestrationDetector,
     OrchestrationService,
@@ -227,6 +229,50 @@ class _FailingDispatcher(DryRunMutationDispatcher):
         super().rollback(applied)
 
 
+class _NonDryRunDispatcher:
+    def __init__(self):
+        self._counter = 0
+
+    def apply(self, operation: MutationOperation) -> AppliedMutation:
+        self._counter += 1
+        return AppliedMutation(operation_id=f"live-{self._counter}", operation=operation)
+
+    def rollback(self, applied: AppliedMutation) -> None:
+        _ = applied
+
+
+class _FlakyRetryableDispatcher(DryRunMutationDispatcher):
+    def __init__(self, fail_once_operation_types: set[str]):
+        super().__init__()
+        self._fail_once_operation_types = fail_once_operation_types
+        self._failed: set[str] = set()
+
+    def apply(self, operation: MutationOperation) -> AppliedMutation:
+        if operation.operation_type in self._fail_once_operation_types and operation.operation_type not in self._failed:
+            self._failed.add(operation.operation_type)
+            raise DispatcherExecutionError(
+                error_class=DispatcherErrorClass.NETWORK,
+                message="network timeout from dispatcher",
+            )
+        return super().apply(operation)
+
+
+class _AlwaysRetryableFailureDispatcher(DryRunMutationDispatcher):
+    def apply(self, operation: MutationOperation) -> AppliedMutation:
+        raise DispatcherExecutionError(
+            error_class=DispatcherErrorClass.NETWORK,
+            message="network timeout from dispatcher",
+        )
+
+
+class _NonRetryableAuthFailureDispatcher(DryRunMutationDispatcher):
+    def apply(self, operation: MutationOperation) -> AppliedMutation:
+        raise DispatcherExecutionError(
+            error_class=DispatcherErrorClass.AUTH,
+            message="token expired for dispatcher credentials",
+        )
+
+
 def test_mutation_execution_failure_rolls_back_prior_operations() -> None:
     fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
     issues, comments_by_issue, chain, now = _load_input(fixture)
@@ -240,5 +286,257 @@ def test_mutation_execution_failure_rolls_back_prior_operations() -> None:
     assert report.applied == []
     assert len(report.failed) == 1
     assert report.failed[0].reason == "simulated dispatcher failure"
+    assert report.failed[0].downgraded_from_legacy is True
     assert report.rolled_back_operations == 1
     assert dispatcher.rollback_calls == ["auto_comment"]
+    assert report.summary["compatibility"]["downgraded_legacy_dispatcher_errors"] == 1
+
+
+def test_mutation_execution_success_after_retry_marks_transient_recovered() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(
+        mutation_executor=MutationExecutor(
+            retry_max_attempts=3,
+            retry_initial_backoff_ms=1,
+            sleep_fn=lambda _seconds: None,
+        )
+    )
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(
+        actions=blocked_action,
+        issues=issues,
+        dispatcher=_FlakyRetryableDispatcher(fail_once_operation_types={"auto_comment"}),
+    )
+
+    assert report.failed == []
+    assert report.summary["error_classification"]["transient_recovered"] == 1
+    auto_comment_attempt = next(item for item in report.attempt_metadata if item.operation_type == "auto_comment")
+    assert auto_comment_attempt.attempts == 2
+    assert auto_comment_attempt.backoff_schedule_ms == [1]
+    assert auto_comment_attempt.outcome == "transient_recovered"
+
+
+def test_mutation_execution_retry_exhausted_records_attempts_and_backoff() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(
+        mutation_executor=MutationExecutor(
+            retry_max_attempts=3,
+            retry_initial_backoff_ms=2,
+            retry_backoff_multiplier=2.0,
+            sleep_fn=lambda _seconds: None,
+        )
+    )
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(
+        actions=blocked_action,
+        issues=issues,
+        dispatcher=_AlwaysRetryableFailureDispatcher(),
+    )
+
+    assert report.applied == []
+    assert len(report.failed) == 1
+    assert report.failed[0].classification == "retry_exhausted"
+    assert report.failed[0].attempts == 3
+    assert report.failed[0].backoff_schedule_ms == [2, 4]
+    assert report.summary["error_classification"]["retry_exhausted"] == 1
+    assert report.summary["retry_state"]["total_retry_attempts"] == 2
+
+
+def test_mutation_execution_summary_exposes_observability_counts() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService()
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(actions=blocked_action, issues=issues)
+
+    assert report.summary["total_actions"] == 1
+    assert report.summary["applied_operations"] == 3
+    assert report.summary["operations_by_type"] == {
+        "auto_comment": 1,
+        "reassign_suggestion": 1,
+        "escalation_flag": 1,
+    }
+    assert report.summary["rejected_operations"] == 0
+    assert report.summary["rolled_back_operations"] == 0
+    assert report.summary["status_transitions"] == {
+        "planned": 1,
+        "applied": 3,
+        "rejected": 0,
+        "failed": 0,
+        "rolled_back": 0,
+    }
+    assert report.summary["error_classification"] == {
+        "guardrail_rejection": 0,
+        "dispatcher_failure": 0,
+        "transient_recovered": 0,
+        "retry_exhausted": 0,
+        "non_retryable_policy": 0,
+    }
+    assert report.summary["dispatcher_error_classes"] == {
+        "network": 0,
+        "auth": 0,
+        "rate_limit": 0,
+        "policy": 0,
+        "validation": 0,
+        "internal": 0,
+    }
+    assert report.summary["retry_state"] == {
+        "attempt": 1,
+        "max_attempts": 3,
+        "retryable_failures": 0,
+        "total_retry_attempts": 0,
+        "initial_backoff_ms": 100,
+        "backoff_multiplier": 2.0,
+    }
+    assert report.summary["compatibility"] == {
+        "downgraded_legacy_dispatcher_errors": 0,
+    }
+    assert report.summary["mutation_outcomes"] == {
+        "applied": 3,
+        "rejected": 0,
+        "failed": 0,
+        "rolled_back": 0,
+        "transient_recovered": 0,
+        "retry_exhausted": 0,
+        "non_retryable_policy": 0,
+    }
+
+
+def test_cli_payload_includes_triage_owner_routes_and_failure_categories() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(
+        mutation_executor=MutationExecutor(pilot_issue_identifier_allowlist={"SHAAA-999"}),
+    )
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+    report = service.execute_mutations(actions=blocked_action, issues=issues)
+
+    payload = _build_payload(result=result, mode="dry_run", company_id=None, mutation_report=report)
+
+    assert payload["triage_report"]["signal_counts"]["blocked_stale"] == 1
+    assert payload["triage_report"]["owner_routing"][0]["owner_agent_id"] == "agent-cto"
+    assert payload["triage_report"]["owner_routing"][0]["action_count"] == 3
+    assert payload["triage_report"]["top_failed_categories"] == [{"category": "guardrail_policy", "count": 1}]
+    assert payload["triage_report"]["failure_routes"]["non_retryable_policy"][0]["owner_agent_id"] == "agent-cto"
+
+
+def test_cli_payload_includes_retry_exhausted_owner_routing_and_attempt_metadata() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(
+        mutation_executor=MutationExecutor(
+            retry_max_attempts=2,
+            retry_initial_backoff_ms=3,
+            sleep_fn=lambda _seconds: None,
+        )
+    )
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+    report = service.execute_mutations(
+        actions=blocked_action,
+        issues=issues,
+        dispatcher=_AlwaysRetryableFailureDispatcher(),
+    )
+
+    payload = _build_payload(result=result, mode="dry_run", company_id=None, mutation_report=report)
+
+    retry_route = payload["triage_report"]["failure_routes"]["retry_exhausted"][0]
+    assert retry_route["owner_agent_id"] == "agent-cto"
+    assert retry_route["action_type"] == "escalate_blocker"
+    assert retry_route["error_class"] == "network"
+    assert retry_route["routing_action"] == "retry_with_backoff"
+    assert retry_route["attempts"] == 2
+    assert retry_route["backoff_schedule_ms"] == [3]
+    assert payload["mutation_execution"]["attempt_metadata"][0]["outcome"] == "retry_exhausted"
+    assert payload["mutation_execution"]["attempt_metadata"][0]["error_class"] == "network"
+    assert payload["mutation_execution"]["attempt_metadata"][0]["downgraded_from_legacy"] is False
+    assert payload["mutation_execution"]["failed"][0]["classification"] == "retry_exhausted"
+    assert payload["mutation_execution"]["failed"][0]["error_class"] == "network"
+    assert payload["mutation_execution"]["failed"][0]["downgraded_from_legacy"] is False
+    assert payload["triage_report"]["failure_routes"]["by_error_class"]["network"][0]["routing_action"] == "retry_with_backoff"
+
+
+def test_mutation_execution_non_retryable_auth_error_is_not_retried() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(
+        mutation_executor=MutationExecutor(
+            retry_max_attempts=3,
+            retry_initial_backoff_ms=1,
+            sleep_fn=lambda _seconds: None,
+        )
+    )
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(
+        actions=blocked_action,
+        issues=issues,
+        dispatcher=_NonRetryableAuthFailureDispatcher(),
+    )
+
+    assert report.applied == []
+    assert len(report.failed) == 1
+    assert report.failed[0].classification == "non_retryable_dispatcher"
+    assert report.failed[0].attempts == 1
+    assert report.failed[0].error_class == "auth"
+    assert report.failed[0].downgraded_from_legacy is False
+    assert report.summary["dispatcher_error_classes"]["auth"] == 1
+    assert report.summary["compatibility"]["downgraded_legacy_dispatcher_errors"] == 0
+
+
+def test_mutation_execution_pilot_allowlist_rejects_non_eligible_issue() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(
+        mutation_executor=MutationExecutor(pilot_issue_identifier_allowlist={"SHAAA-999"}),
+    )
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(actions=blocked_action, issues=issues)
+
+    assert report.applied == []
+    assert report.failed == []
+    assert len(report.rejected) == 1
+    assert report.rejected[0].reason == "Issue identifier is outside pilot allowlist."
+    assert report.rejected[0].classification == "non_retryable_policy"
+
+
+def test_mutation_execution_pilot_kill_switch_rejects_all() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(mutation_executor=MutationExecutor(pilot_kill_switch_enabled=True))
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(actions=blocked_action, issues=issues)
+
+    assert report.applied == []
+    assert report.failed == []
+    assert len(report.rejected) == 1
+    assert report.rejected[0].reason == "Pilot kill-switch is enabled; no mutations are allowed."
+
+
+def test_mutation_execution_dry_run_first_rejects_non_dry_dispatcher() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(mutation_executor=MutationExecutor(require_dry_run_first=True))
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+
+    report = service.execute_mutations(actions=blocked_action, issues=issues, dispatcher=_NonDryRunDispatcher())
+
+    assert report.applied == []
+    assert report.failed == []
+    assert len(report.rejected) == 1
+    assert report.rejected[0].reason == "Dry-run-first policy rejected non-dry-run dispatcher."
