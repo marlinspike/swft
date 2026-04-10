@@ -41,3 +41,32 @@ Notes:
 - Optional `--now` can pin the live scan clock for deterministic outputs.
 
 The command prints structured JSON payloads for detections and planned actions, including dispatch contracts (`comment_draft`, recommended assignee, follow-up issue intent, and source issue metadata).
+
+## Mutation Execution (Guarded)
+
+Run guarded execution actions in dry-run mode:
+
+```bash
+cd backend
+python -m app.services.orchestration.cli --input tests/data/orchestration/scanner_input.json --execute-mutations
+```
+
+Supported mutation action types:
+
+- `auto_comment`
+- `reassign_suggestion`
+- `escalation_flag`
+
+Guardrails:
+
+- Rejects mutations for `done`/`cancelled` issues.
+- Rejects empty/oversized comment drafts.
+- Deduplicates repeated issue/action combinations per run.
+- Enforces operation budget per execution run.
+- Rolls back already-applied operations for an action if a downstream operation fails.
+
+Rollout and safe-disable note:
+
+- Recommended rollout path: keep execution in dry-run telemetry mode first (`--execute-mutations`).
+- Fallback path: omit `--execute-mutations` to revert to planning-only output.
+- Disable path: remove the runtime flag from scheduler/invocation config; planning output remains available.

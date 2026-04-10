@@ -6,11 +6,13 @@ from pathlib import Path
 
 from app.services.orchestration import (
     ChainOfCommandAgent,
+    DryRunMutationDispatcher,
     OrchestrationDetector,
     OrchestrationService,
     PaperclipIssueFeedAdapter,
 )
 from app.services.orchestration.cli import _build_payload, _load_input
+from app.services.orchestration.execution import AppliedMutation, MutationExecutor, MutationOperation
 
 
 def _now() -> datetime:
@@ -147,3 +149,96 @@ def test_live_mode_payload_matches_golden_fixture() -> None:
     expected = json.loads(golden_fixture.read_text(encoding="utf-8"))
 
     assert actual == expected
+
+
+def test_mutation_execution_blocked_trigger_success_path() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService()
+
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+    report = service.execute_mutations(actions=blocked_action, issues=issues)
+
+    operation_types = [item.operation.operation_type for item in report.applied]
+    assert report.failed == []
+    assert report.rejected == []
+    assert report.dry_run is True
+    assert operation_types == ["auto_comment", "reassign_suggestion", "escalation_flag"]
+
+
+def test_mutation_execution_idle_trigger_success_path() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService()
+
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    idle_action = [item for item in result.actions if item.issue_identifier == "SHAAA-201"]
+    report = service.execute_mutations(actions=idle_action, issues=issues)
+
+    operation_types = [item.operation.operation_type for item in report.applied]
+    assert report.failed == []
+    assert report.rejected == []
+    assert operation_types == ["auto_comment", "reassign_suggestion"]
+
+
+def test_mutation_execution_guardrail_rejects_done_issue() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService()
+
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    done_issue = issues[0]
+    done_override = done_issue.__class__(
+        id=done_issue.id,
+        identifier=done_issue.identifier,
+        title=done_issue.title,
+        status="done",
+        priority=done_issue.priority,
+        updated_at=done_issue.updated_at,
+        assignee_agent_id=done_issue.assignee_agent_id,
+        assignee_user_id=done_issue.assignee_user_id,
+    )
+    overridden_issues = [done_override, *issues[1:]]
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+    report = service.execute_mutations(actions=blocked_action, issues=overridden_issues)
+
+    assert report.applied == []
+    assert report.failed == []
+    assert len(report.rejected) == 1
+    assert "immutable" in report.rejected[0].reason
+
+
+class _FailingDispatcher(DryRunMutationDispatcher):
+    def __init__(self, fail_on_call: int):
+        super().__init__()
+        self._fail_on_call = fail_on_call
+        self._calls = 0
+        self.rollback_calls: list[str] = []
+
+    def apply(self, operation: MutationOperation) -> AppliedMutation:
+        self._calls += 1
+        if self._calls == self._fail_on_call:
+            raise RuntimeError("simulated dispatcher failure")
+        return super().apply(operation)
+
+    def rollback(self, applied: AppliedMutation) -> None:
+        self.rollback_calls.append(applied.operation.operation_type)
+        super().rollback(applied)
+
+
+def test_mutation_execution_failure_rolls_back_prior_operations() -> None:
+    fixture = Path(__file__).parent / "data" / "orchestration" / "scanner_input.json"
+    issues, comments_by_issue, chain, now = _load_input(fixture)
+    service = OrchestrationService(mutation_executor=MutationExecutor())
+    result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
+    blocked_action = [item for item in result.actions if item.issue_identifier == "SHAAA-200"]
+    dispatcher = _FailingDispatcher(fail_on_call=2)
+
+    report = service.execute_mutations(actions=blocked_action, issues=issues, dispatcher=dispatcher)
+
+    assert report.applied == []
+    assert len(report.failed) == 1
+    assert report.failed[0].reason == "simulated dispatcher failure"
+    assert report.rolled_back_operations == 1
+    assert dispatcher.rollback_calls == ["auto_comment"]

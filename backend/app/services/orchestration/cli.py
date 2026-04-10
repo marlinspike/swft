@@ -55,7 +55,12 @@ def _load_input(path: Path) -> tuple[list[IssueSnapshot], dict[str, list[Comment
     return issues, comments_by_issue, chain, now
 
 
-def _build_payload(result: object, mode: str, company_id: str | None) -> dict[str, object]:
+def _build_payload(
+    result: object,
+    mode: str,
+    company_id: str | None,
+    mutation_report: object | None = None,
+) -> dict[str, object]:
     payload = {
         "mode": mode,
         "company_id": company_id,
@@ -118,6 +123,41 @@ def _build_payload(result: object, mode: str, company_id: str | None) -> dict[st
             }
         )
 
+    if mutation_report is not None:
+        payload["mutation_execution"] = {
+            "dry_run": mutation_report.dry_run,
+            "rolled_back_operations": mutation_report.rolled_back_operations,
+            "applied": [
+                {
+                    "operation_id": item.operation_id,
+                    "issue_id": item.operation.issue_id,
+                    "issue_identifier": item.operation.issue_identifier,
+                    "action_type": item.operation.action_type,
+                    "operation_type": item.operation.operation_type,
+                    "payload": item.operation.payload,
+                }
+                for item in mutation_report.applied
+            ],
+            "rejected": [
+                {
+                    "issue_id": item.issue_id,
+                    "issue_identifier": item.issue_identifier,
+                    "action_type": item.action_type,
+                    "reason": item.reason,
+                }
+                for item in mutation_report.rejected
+            ],
+            "failed": [
+                {
+                    "issue_id": item.issue_id,
+                    "issue_identifier": item.issue_identifier,
+                    "action_type": item.action_type,
+                    "reason": item.reason,
+                }
+                for item in mutation_report.failed
+            ],
+        }
+
     return payload
 
 
@@ -128,6 +168,11 @@ def main() -> int:
     parser.add_argument("--api-url", default=os.getenv("PAPERCLIP_API_URL"), help="Paperclip API base URL for live mode")
     parser.add_argument("--api-key", default=os.getenv("PAPERCLIP_API_KEY"), help="Paperclip API bearer token for live mode")
     parser.add_argument("--now", help="Optional ISO timestamp to make live scans deterministic")
+    parser.add_argument(
+        "--execute-mutations",
+        action="store_true",
+        help="Execute mutation operations through the guarded in-process execution layer.",
+    )
     args = parser.parse_args()
 
     if bool(args.input) == bool(args.company_id):
@@ -146,7 +191,8 @@ def main() -> int:
 
     service = OrchestrationService()
     result = service.plan_actions(issues=issues, comments_by_issue=comments_by_issue, chain_of_command=chain, now=now)
-    payload = _build_payload(result=result, mode=mode, company_id=company_id)
+    mutation_report = service.execute_mutations(actions=result.actions, issues=issues) if args.execute_mutations else None
+    payload = _build_payload(result=result, mode=mode, company_id=company_id, mutation_report=mutation_report)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 

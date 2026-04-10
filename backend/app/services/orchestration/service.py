@@ -5,6 +5,7 @@ from datetime import datetime
 
 from .actions import ChainOfCommandAgent, OrchestrationActionPlanner
 from .detection import OrchestrationDetector
+from .execution import MutationDispatcher, MutationExecutionReport, MutationExecutor
 from .models import CommentSnapshot, DetectionSignal, IssueSnapshot, OrchestrationAction
 
 
@@ -19,9 +20,11 @@ class OrchestrationService:
         self,
         detector: OrchestrationDetector | None = None,
         action_planner: OrchestrationActionPlanner | None = None,
+        mutation_executor: MutationExecutor | None = None,
     ):
         self._detector = detector or OrchestrationDetector()
         self._action_planner = action_planner or OrchestrationActionPlanner()
+        self._mutation_executor = mutation_executor or MutationExecutor()
 
     def plan_actions(
         self,
@@ -38,3 +41,12 @@ class OrchestrationService:
             chain_of_command=chain_of_command,
         )
         return ScanResult(detections=detections, actions=actions)
+
+    def execute_mutations(
+        self,
+        actions: list[OrchestrationAction],
+        issues: list[IssueSnapshot],
+        dispatcher: MutationDispatcher | None = None,
+    ) -> MutationExecutionReport:
+        issues_by_id = {issue.id: issue for issue in issues}
+        return self._mutation_executor.execute(actions=actions, issues_by_id=issues_by_id, dispatcher=dispatcher)
